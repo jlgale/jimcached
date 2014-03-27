@@ -14,16 +14,6 @@
 #include <boost/asio.hpp>
 
 using namespace std;
-using namespace std::placeholders;
-
-enum class session_error_t {
-  closed=1,
-  client_error,
-};
-
-typedef std::function<void (buffer)> session_cmdline;
-typedef std::function<void (rope)> session_recv;
-typedef std::function<void (std::error_code err)> session_result;
 
 enum session_state {
   write_prompt,
@@ -36,6 +26,24 @@ enum session_state {
   stopping,
 };
 
+/*
+static const char *
+sss(session_state s)
+{
+  switch (s) {
+  case write_prompt: return "write_prompt";
+  case read_command: return "read_command";
+  case execute_command: return "execute_command";
+  case read_data: return "read_data";
+  case execute_write: return "execute_write";
+  case write_data: return "write_data";
+  case write_result: return "write_result";
+  case stopping: return "stopping";
+  }
+  return "unknown";
+}
+*/
+
 class Session
 {
   boost::asio::io_service &io_service;
@@ -47,8 +55,7 @@ class Session
   bool noreply_;
   buffer ibuf;
   buffer obuf;
-  session_state state_;
-  session_state next_state_;
+  session_state state_ = write_prompt;
   session_done done_;
   buffer args_;
   buffer cmd_;
@@ -114,15 +121,6 @@ class Session
   bool dispatch();
   bool dispatch_write();
 
-  /*
-  void execute_one_done(session_result done, std::error_code ec);
-  void execute_one_read(session_result done, buffer cmdline);
-  void execute_one(session_result done);
-  void execute_common(buffer &cmdline, session_result done);
-  void interact_iter(session_done done, std::error_code ec);
-  void result(session_result done, std::error_code ec);
-  */
-
 public:
   class closed { };
 
@@ -179,30 +177,6 @@ public:
   }
 };
 
-/*
-static error_code
-cache_error_code(cache_error_t err)
-{
-  return error_code((int)err, cache_error_category::instance());
-}
-*/
-
-/*
-static error_code
-session_error_code(session_error_t err)
-{
-  return error_code((int)err, session_error_category::instance());
-}
-*/
-
-/*
-void
-Session::result(session_result done, error_code ec)
-{
-  io_service.dispatch(bind(done, ec));
-}
-*/
-
 void
 Session::send(const char *msg)
 {
@@ -237,14 +211,6 @@ success()
   return boost::system::error_code();
 }
 
-/*
-static error_code
-convert_error(boost::system::error_code ec)
-{
-  return make_error_code(static_cast<errc>(ec.value()));
-}
-*/
-
 bool
 Session::flush()
 {
@@ -253,7 +219,6 @@ Session::flush()
   } else {
     out.async_write(boost::asio::const_buffers_1(obuf.headp(), obuf.used()),
                     callback_);
-    next_state_ = write_prompt;
     return true;
   }
 }
@@ -315,7 +280,7 @@ Session::send_data()
     state_ = execute_command;
     return false;
   }
-  next_state_ = write_data;
+  state_ = write_data;
   send_async(m->data, m->size);
   return true;
 }
@@ -347,13 +312,8 @@ Session::get(bool cas_unique)
     sendf("VALUE %.*s %u %u",
           key.used(), key.headp(), e->get_flags(), size);
   }
-  if (flush()) {
-    next_state_ = write_data;
-    return true;
-  } else {
-    state_ = write_data;
-    return false;
-  }
+  state_ = write_data;
+  return flush();
 }
 
 void
@@ -600,7 +560,7 @@ Session::dispatch_write()
 bool
 Session::dispatch()
 {
-  log << "cmd> " << cmd_ << " " << args_ << std::endl;
+  //log << "cmd> " << cmd_ << " " << args_ << std::endl;
   if (cmd_.empty()) {
     state_ = write_prompt;      // ignore empty commands
     return false;
@@ -653,13 +613,13 @@ Session::recv_data(size_t bytes)
   size_t ready = min(bytes, (size_t)ibuf.used());
   memcpy(idata_->data, ibuf.headp(), ready);
   ibuf.notify_read(ready);
+  state_ = execute_write;
   if (ready == bytes) {
-    return dispatch_write();
+    return false;
   } else {
     in.async_read(boost::asio::mutable_buffers_1(idata_->data, bytes),
                   boost::asio::transfer_exactly(bytes - ready),
                   callback_);
-    next_state_ = execute_write;
     return true;
   }
 }
@@ -667,12 +627,11 @@ Session::recv_data(size_t bytes)
 bool
 Session::send_prompt()
 {
-  send(prompt_);
-  if (flush()) {
-    next_state_ = read_command;
-    return true;
+  state_ = read_command;
+  if (prompt_) {
+    send(prompt_);
+    return flush();
   } else {
-    state_ = read_command;
     return false;
   }
 }
@@ -681,107 +640,16 @@ bool
 Session::recv_command()
 {
   noreply_ = false;
+  state_ = execute_command;
   if (cmd_callback(success(), 0) == 0) {
     return false;
   } else {
     ibuf.compact();
     in.async_read(boost::asio::mutable_buffers_1(ibuf.tailp(), ibuf.available()),
                   cmd_callback_, callback_);
-    next_state_ = execute_command;
     return true;
   }
 }
-
-// Dispatch a command and handle common error conditions
-/*
-void
-Session::execute_common(buffer &cmdline, session_result done)
-{
-  try {
-    dispatch(cmdline, [=](error_code ec) {
-        if (ec.category() == cache_error_category::instance()) {
-          switch(cache_error_t(ec.value())) {
-          case cache_error_t::stored:
-            sendln("STORED");
-            break;
-          case cache_error_t::deleted:
-            sendln("DELETED");
-            break;
-          case cache_error_t::notfound:
-            sendln("NOT_FOUND");
-            break;
-          case cache_error_t::set_error:
-            sendln("NOT_STORED");
-            break;
-          case cache_error_t::cas_exists:
-            sendln("EXISTS");
-            break;
-          }
-          ec = success();
-        }
-        result(done, ec);
-      });
-  } catch (::client_error &e) {
-    result(done, success());
-  }
-  //} catch (cache::incr_decr_error) {
-  //  // XXX Is this a client error?
-  //  client_error("value not an integer");
-}
-*/
-
-/*
-void
-Session::execute_one_done(session_result done, error_code ec)
-{
-  gc_unlock();
-  ibuf.compact();
-  if (ec) {
-    result(done, ec);
-  } else {
-    flush(done);                // XXX - always flush?
-  }
-}
-
-void
-Session::execute_one_read(session_result done, buffer cmdline)
-{
-  try {
-    gc_lock();
-    execute_common(cmdline, bind(&Session::execute_one_done,
-                                 this, done, _1));
-    return;
-  } catch (const class client_error &) {
-    // okay
-  } catch (const class server_error &) {
-    // also fine
-  }
-  // XXX - hmmm
-  assert(0);
-}
-
-void
-Session::execute_one(session_result done)
-{
-  noreply = false;
-  recv_command(done, bind(&Session::execute_one_read, this, done, _1));
-}
-*/
-
-/*
-void
-Session::interact_iter(session_done done, error_code ec)
-{
-  gc_checkpoint();              // XXX - remove
-
-  if (ec) {
-    io_service.dispatch(done);                     // schedule
-    return;
-  }
-
-  interact(done);
-}
-*/
 
 size_t
 Session::cmd_callback(boost::system::error_code ec, size_t bytes)
@@ -827,7 +695,6 @@ Session::callback(boost::system::error_code ec, size_t bytes)
       break;
     }
   }
-  state_ = next_state_;
   loop();
 }
 
@@ -840,30 +707,34 @@ Session::loop()
     case write_prompt:
       obuf.reset();
       blocked = send_prompt();
-      break;
+      continue;
     case read_command:
       obuf.reset();
       blocked = recv_command();
-      break;
+      continue;
     case execute_command:
       blocked = dispatch();
-      break;
+      continue;
     case execute_write:
       blocked = dispatch_write();
-      break;
+      continue;
     case read_data:
       assert(0);                // XXX
-      break;
+      continue;
     case write_data:
       obuf.reset();
       blocked = send_data();
-      break;
+      continue;
     case write_result:
+      state_ = write_prompt;
       blocked = flush();
-      break;
+      continue;
     case stopping:
+      io_service.dispatch(done_);
       return;
     }
+    assert(0);
+    //log << sss(cur) << " -> " << sss(state_) << (blocked ? " (blocked)" : "") << std::endl;
   }
 }
 
@@ -871,6 +742,7 @@ void
 Session::interact(session_done done)
 {
   done_ = done;
+  state_ = write_prompt;
   loop();
 }
 

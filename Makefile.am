@@ -1,10 +1,10 @@
-bin_PROGRAMS = jimccached cachetest standalone loadtest jimccached2 standalone2
+bin_PROGRAMS = jimcached cachetest standalone loadtest jimcached2 standalone2
 
 AM_CPPFLAGS = $(BOOST_CPPFLAGS)
 AM_LDFLAGS = $(BOOST_LDFLAGS)
 
-jimccached_LDADD = $(BOOST_SYSTEM_LIB)
-jimccached2_LDADD = $(BOOST_SYSTEM_LIB)
+jimcached_LDADD = $(BOOST_SYSTEM_LIB)
+jimcached2_LDADD = $(BOOST_SYSTEM_LIB)
 standalone_LDADD = $(BOOST_SYSTEM_LIB)
 standalone_CPPFLAGS = -DBOOST_ASIO_DISABLE_EPOLL=1
 standalone2_LDADD = $(BOOST_SYSTEM_LIB)
@@ -32,18 +32,18 @@ SESSION2_SRC = \
 	src/session.h src/session2.cc \
 	src/utils.h src/utils.cc
 
-jimccached_SOURCES = \
+jimcached_SOURCES = \
 	$(COMMON_SRC) \
 	$(SESSION_SRC) \
-	src/jimccached.cc \
+	src/jimcached.cc \
 	src/pool.h src/pool.cc \
 	src/tcp.h src/tcp.cc \
 	src/service.h src/service.cc
 
-jimccached2_SOURCES = \
+jimcached2_SOURCES = \
 	$(COMMON_SRC) \
 	$(SESSION2_SRC) \
-	src/jimccached.cc \
+	src/jimcached.cc \
 	src/pool.h src/pool.cc \
 	src/tcp.h src/tcp.cc \
 	src/service.h src/service.cc

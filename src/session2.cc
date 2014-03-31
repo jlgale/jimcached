@@ -95,9 +95,7 @@ class Session
   bool flush();
 
   // Command handlers
-  /*
-  void flush_all(buffer &args);
-  */
+  bool flush_all();
   bool cas();
   bool get(bool cas_unique);
   bool incr_decr(bool incr);
@@ -461,18 +459,17 @@ Session::touch()
   return false;
 }
 
-/*
-void
-Session::flush_all(buffer &args, session_result done)
+bool
+Session::flush_all()
 {
   unsigned long delay;
-  if (!consume_int(args, &delay))
+  if (!consume_int(args_, &delay))
     delay = 0;
-  parse_noreply(args);
+  if (parse_noreply())
+    return false;
   money.flush_all(delay);
-  result(done, success());
+  return false;
 }
-*/
 
 bool
 Session::version()
@@ -553,10 +550,8 @@ Session::dispatch()
     return cas();
   } else if (cmd_.is("touch")) {
     return touch();
-    /*
-  } else if (cmd.is("flush_all")) {
-    flush_all(cmdline, done);
-    */
+  } else if (cmd_.is("flush_all")) {
+    return flush_all();
   } else if (cmd_.is("version")) {
     return version();
   } else if (cmd_.is("stats")) {

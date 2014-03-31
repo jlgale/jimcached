@@ -61,6 +61,7 @@ class Session
   buffer args_;
   buffer cmd_;
   unsigned long flags_, exptime_;
+  uint64_t unique_;
   buffer key_;
   mem *idata_ = NULL;
   const_rope odata_;
@@ -95,9 +96,9 @@ class Session
 
   // Command handlers
   /*
-  void cas(buffer &args);
   void flush_all(buffer &args);
   */
+  bool cas();
   bool get(bool cas_unique);
   bool incr_decr(bool incr);
   bool del();
@@ -371,7 +372,7 @@ Session::parse_update(unsigned long *bytes)
 bool
 Session::del()
 {
-  if (parse_key() && parse_noreply()) {
+  if (!parse_key() && !parse_noreply()) {
     cache_error_t res = money.del(key_);
     send_cache_result(res);
   }
@@ -427,23 +428,21 @@ Session::incr_decr(bool incr)
   return false;
 }
 
-/*
-void
-Session::cas(buffer &args, session_result done)
+bool
+Session::cas()
 {
-  unsigned long flags, exptime, bytes;
-  uint64_t unique;
-  const buffer key = parse_update(args, &flags, &exptime, &bytes);
-  if (!consume_u64(args, &unique))
+  unsigned long bytes;
+  if (parse_update(&bytes))
+    return false;
+  if (!consume_u64(args_, &unique_)) {
     client_error("missing cas unique");
-  parse_noreply(args);
-  recv_data(bytes, done,
-            [=](rope data) {
-              cache_error_t res = money.cas(key, flags, exptime, unique, data);
-              result(done, cache_error_code(res));
-            });
+    return false;
+  }
+  if (parse_noreply())
+    return false;
+  
+  return recv_data(bytes);
 }
-*/
 
 bool
 Session::touch()
@@ -517,6 +516,8 @@ Session::dispatch_write()
     res = money.append(key_, data);
   } else if (cmd_.is("prepend")) {
     res = money.prepend(key_, data);
+  } else if (cmd_.is("cas")) {
+    res = money.cas(key_, flags_, exptime_, unique_, data);
   } else {
     server_error("confused by command: %.*s", cmd_.used(), cmd_.headp());
     return false;
@@ -548,10 +549,8 @@ Session::dispatch()
     return incr_decr(false);
   } else if (cmd_.is("delete")) {
     return del();
-    /*
-  } else if (cmd.is("cas")) {
-    cas(cmdline, done);
-    */
+  } else if (cmd_.is("cas")) {
+    return cas();
   } else if (cmd_.is("touch")) {
     return touch();
     /*

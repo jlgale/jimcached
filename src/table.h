@@ -94,7 +94,7 @@ private:
   bool remove_value(bucket_t &b);
 
   opentable(const opentable&) = delete;
-  
+
 public:
   opentable(int lg2size, eq_f eq, hash_f hash,
             key_release_f key_release, val_release_f val_release);
@@ -116,7 +116,7 @@ public:
   int lg2size() const { return lg2size_; }
   size_t size() const { return 1ULL << lg2size_; }
   size_t usage() const { return usage_count; }
-  
+
   KT *set_shared(KT *key, VT *value) noexcept;
   bool add_shared(KT *key, VT *value, KT **cur_key, VT **cur_value) noexcept;
 
@@ -132,7 +132,7 @@ public:
     KT *key() const { return b.k.load(); }
     VT *value() const { return b.v.load().get_ptr(); }
   };
-  
+
   class iterator
   {
     bucket_t *ref;

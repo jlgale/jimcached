@@ -11,6 +11,8 @@ public:
   void add(const T &a) { value_ += a; }
   void sub(const T &a) { value_ -= a; }
   operator T () const { return value_.load(); }
+  counter_base<T>& operator++() { incr(); return *this; }
+  counter_base<T>& operator+=(const T &a) { add(a); return *this; }
 };
 
 typedef counter_base<ssize_t> counter;

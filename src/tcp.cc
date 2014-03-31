@@ -2,6 +2,7 @@
 #include "cache.h"
 #include "session.h"
 #include "pool.h"
+#include "log.h"
 
 #include <memory>
 #include <boost/asio.hpp>
@@ -18,13 +19,14 @@ public:
 
   void interact(session_done done)
   {
+    socket_.set_option(tcp::no_delay(true));
     session_interact(*session_, done);
   }
 
   tcp_session(io_service& io_service, cache &cache, ostream &log)
     : socket_(io_service), stream_(socket_),
       session_(session_new(io_service, cache, stream_, stream_, log, NULL),
-               session_delete) {}
+               session_delete) { }
 
 private:
   tcp::socket socket_;
@@ -57,13 +59,13 @@ private:
                      const boost::system::error_code& error)
   {
     if (!error) {
-      log_ << "new connection " << (void*) new_connection << endl;
+      log_ << INFO << "new connection " << (void*) new_connection << endl;
       new_connection->interact([=](){
-          log_ << "connection close " << (void*) new_connection << endl;
+          log_ << INFO << "connection close " << (void*) new_connection << endl;
           delete new_connection;
         });
     } else {
-      log_ << "accept() error: " << error << endl;
+      log_ << ERROR << "accept(): " << error << endl;
       delete new_connection;
     }
 

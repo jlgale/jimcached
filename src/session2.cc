@@ -4,6 +4,7 @@
 #include "error.h"
 #include "session.h"
 #include "utils.h"
+#include "log.h"
 
 #include "config.h"
 
@@ -529,6 +530,10 @@ Session::stats()
   std::ostream os(&buf);
   send_stat("version", PACKAGE_VERSION);
   send_stat("pointer_size", sizeof(void*));
+  send_stat("cmd_get", money.get_count());
+  send_stat("cmd_set", money.set_count());
+  send_stat("get_hits", money.get_hit_count());
+  send_stat("get_misses", money.get_miss_count());
   send_stat("bytes", money.bytes());
   send_stat("buckets", money.buckets());
   send_stat("keys", money.keys());
@@ -560,7 +565,6 @@ Session::dispatch_write()
 bool
 Session::dispatch()
 {
-  //log << "cmd> " << cmd_ << " " << args_ << std::endl;
   if (cmd_.empty()) {
     state_ = write_prompt;      // ignore empty commands
     return false;
@@ -598,7 +602,7 @@ Session::dispatch()
     state_ = stopping;
     return false;
   } else {
-    log << "unknown command: " << cmd_ << endl;
+    log << INFO << "unknown command: " << cmd_ << endl;
     client_error("unknown command: '%.*s'", cmd_.used(), cmd_.headp());
     return false;
   }
@@ -662,6 +666,7 @@ Session::cmd_callback(boost::system::error_code ec, size_t bytes)
       ibuf.notify_write(bytes);
       args_ = ibuf.sub(end - ibuf.headp() + 1);
       cmd_ = consume_token(args_);
+      log << INFO << "cmd> " << cmd_ << args_ << std::endl;
       return 0;
     }
 
@@ -676,11 +681,11 @@ Session::callback(boost::system::error_code ec, size_t bytes)
     case write_prompt:
     case write_data:
     case write_result:
-      log << "write error: " << ec << std::endl;
+      log << ERROR << "write error: " << ec.message() << std::endl;
       state_ = stopping;
       break;
     case read_command:
-      log << "read error: " << ec << std::endl;
+      log << ERROR << "read error: " << ec.message() << std::endl;
       state_ = stopping;
       break;
     case execute_command:
@@ -688,7 +693,7 @@ Session::callback(boost::system::error_code ec, size_t bytes)
       break;
     case read_data:
       mem_free(idata_);
-      log << "read error: " << ec << std::endl;
+      log << ERROR << "read error: " << ec.message() << std::endl;
       state_ = stopping;
       break;
     case stopping:
@@ -734,7 +739,6 @@ Session::loop()
       return;
     }
     assert(0);
-    //log << sss(cur) << " -> " << sss(state_) << (blocked ? " (blocked)" : "") << std::endl;
   }
 }
 

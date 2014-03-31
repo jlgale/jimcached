@@ -50,7 +50,10 @@ private:
   // XXX - entry& should be const
   bool entry_is_live(entry &e, const time_t &cutoff, const time_t &now) const;
 
-  counter_base<ssize_t> _bytes;
+  counter bytes_;
+  counter sets_;
+  counter gets_;
+  counter get_misses_;
 
 public:
 
@@ -76,6 +79,10 @@ public:
   size_t bytes() const;
   size_t buckets() const;
   size_t keys() const;
+  size_t get_count() const;
+  size_t get_hit_count() const;
+  size_t get_miss_count() const;
+  size_t set_count() const;
   
   // Garbage collect old entries. Can be called concurrently with
   // other operations.

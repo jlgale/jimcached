@@ -4,6 +4,7 @@
 #include "error.h"
 #include "session.h"
 #include "utils.h"
+#include "log.h"
 
 #include "config.h"
 
@@ -557,7 +558,7 @@ Session::stats(buffer &cmdline, session_result done)
 void
 Session::dispatch(buffer &cmdline, session_result done)
 {
-  log << "cmd> " << cmdline << std::endl;
+  log << INFO << "cmd> " << cmdline << std::endl;
   const buffer cmd = consume_token(cmdline);
   if (cmd.empty()) {
     result(done, success());    // ignore empty commands
@@ -596,7 +597,7 @@ Session::dispatch(buffer &cmdline, session_result done)
     done(session_error_code(session_error_t::closed));
     //throw closed();             // XXX
   } else {
-    log << "unknown command: " << cmd << endl;
+    log << INFO << "unknown command: " << cmd << endl;
     client_error("unknown command: '%.*s'", cmd.used(), cmd.headp());
   }
 }

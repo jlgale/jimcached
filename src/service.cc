@@ -2,6 +2,7 @@
 #include "cache.h"
 #include "service.h"
 #include <cassert>
+#include "log.h"
 
 auto service::next() -> time_type
 {
@@ -15,7 +16,9 @@ auto service::next() -> time_type
 void service::run()
 {
   gc_lock();
+  log << INFO << "starting collect" << std::endl;
   c.collect();
+  log << INFO << "collect complete" << std::endl;
   gc_unlock();
 }
 
@@ -35,8 +38,8 @@ void service::entry()
   cpu_exit();
 }
 
-service::service(cache &c, std::ostream &)
-  : c(c), running(true), worker(std::bind(&service::entry, this))
+service::service(cache &c, std::ostream &log)
+  : c(c), log(log), running(true), worker(std::bind(&service::entry, this))
 {
 }
 

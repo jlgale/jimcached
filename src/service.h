@@ -5,7 +5,7 @@ class service
 {
 private:
   cache &c;
-  //std::ostream &log;
+  std::ostream &log;
   std::atomic<bool> running;
   std::thread worker;
   static const clockid_t clock = CLOCK_MONOTONIC;

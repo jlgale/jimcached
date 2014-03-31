@@ -5,6 +5,7 @@
 #include "config.h"
 #include "service.h"
 #include "utils.h"
+#include "log.h"
 
 #include <algorithm>
 #include <cstring>
@@ -13,16 +14,12 @@
 #include <err.h>
 #include <thread>
 
-#include <boost/iostreams/stream_buffer.hpp>
-#include <boost/iostreams/device/null.hpp>
-
 static char *iface = nullptr;
 static int tcp_port = 11211;
 static int listen_backlog = 1024;
 static bool daemonize = false;
 static int max_memory_mb = 64;
 static int num_threads = 4;
-static int verbosity = 0;
 
 using std::cout;
 using std::endl;
@@ -89,16 +86,11 @@ int main(int argc, char **argv)
     if (daemon(0, 0))
       err(1, NULL);
   }
-  boost::iostreams::stream_buffer<boost::iostreams::null_sink>
-    null_buf{boost::iostreams::null_sink()};
-  std::ostream null_log(&null_buf);
-
-  std::ostream &log = (verbosity) ? std::clog : null_log;
   cache c((size_t)max_memory_mb * 1024 * 1024);
   io_service_pool io_pool(num_threads);
-  service s(c, log);
+  service s(c, std::clog);
   std::unique_ptr<tcp_server, decltype(&tcp_server_delete)> tcp
-    (tcp_server_new(c, log, iface, tcp_port, listen_backlog, io_pool),
+    (tcp_server_new(c, std::clog, iface, tcp_port, listen_backlog, io_pool),
      tcp_server_delete);
   io_pool.run();
 }

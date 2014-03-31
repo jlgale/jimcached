@@ -11,6 +11,7 @@ standalone2_LDADD = $(BOOST_SYSTEM_LIB)
 standalone2_CPPFLAGS = -DBOOST_ASIO_DISABLE_EPOLL=1
 
 COMMON_SRC = \
+	src/log.h src/log.cc \
 	src/cpu.h src/cpu.cc \
 	src/gc.h src/gc.cc \
 	src/buffer.h \

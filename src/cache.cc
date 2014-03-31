@@ -32,7 +32,7 @@ cache::entry_release(entry *e)
   // XXX - seems wrong that we have to walk this
   for (entry *x = e; x; x = x->newer())
     size += x->size();
-  _bytes.sub(size);
+  bytes_.sub(size);
   e->gc_free();
 }
 
@@ -51,6 +51,7 @@ cache::cache(size_t max_bytes) : max_bytes(max_bytes), flushed(0),
 cache_error_t
 cache::set(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
 {
+  sets_.incr();
   std::unique_ptr<key> mykey(new key(k));
   std::unique_ptr<entry> e(new entry(flags, exptime, r));
   key *cur_key;
@@ -74,7 +75,7 @@ cache::set(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
   if (cur_key == nullptr)
     return cache_error_t::set_error;
   
-  _bytes.add(r.size());
+  bytes_.add(r.size());
   e.release();
   return cache_error_t::stored;
 }
@@ -106,7 +107,7 @@ cache::add(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
   if (!success)
     return cache_error_t::set_error;
 
-  _bytes.add(r.size());
+  bytes_.add(r.size());
   e.release();
   return cache_error_t::stored;
 }
@@ -125,7 +126,7 @@ cache::replace(const buffer &k, unsigned flags,
     if (!entries->replace(k, e.get()))
       return cache_error_t::set_error;
   }
-  _bytes.add(r.size());
+  bytes_.add(r.size());
   e.release();
   return cache_error_t::stored;
 }
@@ -133,8 +134,14 @@ cache::replace(const buffer &k, unsigned flags,
 cache::ref
 cache::get(const buffer &k)
 {
+  gets_.incr();
   entry *e = _entries.load()->find(k);
-  return e ? e->newest() : nullptr;
+  if (e) {
+    return e->newest();
+  } else {
+    get_misses_.incr();
+    return nullptr;
+  }
 }
 
 cache_error_t
@@ -158,7 +165,7 @@ cache::append(const buffer &key, const rope &suffix)
   ref e = _entries.load()->find(key);
   if (e == nullptr)
     return cache_error_t::set_error;
-  _bytes.add(suffix.size());
+  bytes_.add(suffix.size());
   e->append(suffix);
   return cache_error_t::stored;
 }
@@ -169,7 +176,7 @@ cache::prepend(const buffer &key, const rope &prefix)
   ref e = get(key);
   if (e == nullptr)
     return cache_error_t::set_error;
-  _bytes.add(prefix.size());
+  bytes_.add(prefix.size());
   e->prepend(prefix);
   return cache_error_t::stored;
 }
@@ -220,7 +227,7 @@ cache::touch(const buffer &k, unsigned exptime)
 time_t
 cache::get_atime_cutoff(const table_t &t) const
 {
-  const double p = (max_bytes * (1.0 - reserve_percentage)) / _bytes;
+  const double p = (max_bytes * (1.0 - reserve_percentage)) / bytes_;
   if (p >= 1.0)
     return 0;
 
@@ -304,7 +311,29 @@ bool cache::is_building(table_t **entries, table_t **building)
 
 size_t cache::bytes() const
 {
-  return _bytes;
+  return bytes_;
+}
+
+size_t cache::set_count() const
+{
+  return sets_;
+}
+
+size_t cache::get_count() const
+{
+  return gets_;
+}
+
+size_t cache::get_miss_count() const
+{
+  return get_misses_;
+}
+
+size_t cache::get_hit_count() const
+{
+  size_t misses = get_misses_;
+  size_t gets = gets_;
+  return gets > misses ? gets - misses : 0;
 }
 
 size_t cache::buckets() const
@@ -321,3 +350,4 @@ void cache::flush_all(int delay)
 {
   flushed = timestamp::now() + delay;
 }
+

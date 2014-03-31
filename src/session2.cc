@@ -95,13 +95,10 @@ class Session
 
   // Command handlers
   /*
-  void append(buffer &args);
-  void prepend(buffer &args);
   void cas(buffer &args);
   void flush_all(buffer &args);
   */
   bool get(bool cas_unique);
-  bool set_add_replace();
   bool incr_decr(bool incr);
   bool del();
   bool stats();
@@ -372,15 +369,6 @@ Session::parse_update(unsigned long *bytes)
 }
 
 bool
-Session::set_add_replace()
-{
-  unsigned long bytes;
-  if (parse_update(&bytes) || parse_noreply())
-    return false;
-  return recv_data(bytes);
-}
-
-bool
 Session::del()
 {
   if (parse_key() && parse_noreply()) {
@@ -389,34 +377,6 @@ Session::del()
   }
   return false;
 }
-
-/*
-void
-Session::append(buffer &args, session_result done)
-{
-  unsigned long flags, exptime, bytes;
-  const buffer key = parse_update(args, &flags, &exptime, &bytes);
-  parse_noreply(args);
-  recv_data(bytes, done,
-            [=](rope data) {
-              cache_error_t res = money.append(key, data);
-              result(done, cache_error_code(res));
-            });
-}
-
-void
-Session::prepend(buffer &args, session_result done)
-{
-  unsigned long flags, exptime, bytes;
-  const buffer key = parse_update(args, &flags, &exptime, &bytes);
-  parse_noreply(args);
-  recv_data(bytes, done,
-            [=](rope data) {
-              cache_error_t res = money.prepend(key, data);
-              result(done, cache_error_code(res));
-            });
-}
-*/
 
 void
 Session::send_cache_result(cache_error_t res)
@@ -553,6 +513,10 @@ Session::dispatch_write()
     res = money.add(key_, flags_, exptime_, data);
   } else if (cmd_.is("replace")) {
     res = money.replace(key_, flags_, exptime_, data);
+  } else if (cmd_.is("append")) {
+    res = money.append(key_, data);
+  } else if (cmd_.is("prepend")) {
+    res = money.prepend(key_, data);
   } else {
     server_error("confused by command: %.*s", cmd_.used(), cmd_.headp());
     return false;
@@ -572,8 +536,12 @@ Session::dispatch()
     return get(false);
   } else if (cmd_.is("gets")) {
     return get(true);
-  } else if (cmd_.is("set") || cmd_.is("add") || cmd_.is("replace")) {
-    return set_add_replace();
+  } else if (cmd_.is("set") || cmd_.is("add") || cmd_.is("replace") ||
+             cmd_.is("append") || cmd_.is("prepend")) {
+    unsigned long bytes;
+    if (parse_update(&bytes) || parse_noreply())
+      return false;
+    return recv_data(bytes);
   } else if (cmd_.is("incr")) {
     return incr_decr(true);
   } else if (cmd_.is("decr")) {
@@ -583,10 +551,6 @@ Session::dispatch()
     /*
   } else if (cmd.is("cas")) {
     cas(cmdline, done);
-  } else if (cmd.is("append")) {
-    append(cmdline, done);
-  } else if (cmd.is("prepend")) {
-    prepend(cmdline, done);
     */
   } else if (cmd_.is("touch")) {
     return touch();

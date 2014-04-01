@@ -16,12 +16,28 @@
 
 using namespace std;
 
+/* session state transitions:
+ *
+ * start -> write_prompt -> read_command -> execute_command -+--(quit)-> stop
+ *               ^               |                 |         |
+ *               |            (error)        (set/add/etc.)  |
+ *               |               |                 |         |
+ *               |               v                 v         |
+ *               +--------- write_result <- execute_write    |
+ *                               ^                           |
+ *                               |                       (get/gets)
+ *                               |                           |
+ *                               |                           v
+ *                               +--------------------- write_data
+ *
+ * IO errors cause the session to stop.
+ */
+
 enum session_state {
-  write_prompt,
-  read_command,
-  execute_command,
-  read_data,
-  execute_write,
+  write_prompt,                 // Sending a prompt (standalone mode only)
+  read_command,                 // Reading the next command
+  execute_command,              // Execute the command or reading set data
+  execute_write,                // Execute the set/add/etc. command
   write_data,
   write_result,
   stopping,
@@ -34,7 +50,6 @@ operator<<(ostream &o, session_state s)
   case write_prompt:    return o << "write_prompt";
   case read_command:    return o << "read_command";
   case execute_command: return o << "execute_command";
-  case read_data:       return o << "read_data";
   case execute_write:   return o << "execute_write";
   case write_data:      return o << "write_data";
   case write_result:    return o << "write_result";
@@ -116,6 +131,7 @@ class Session
   void parse_key();
   void stored_if(bool stored);
   void parse_noreply();
+  void set_state(session_state next);
 
   // Session helpers
   void callback(boost::system::error_code ec, size_t bytes);
@@ -134,6 +150,13 @@ public:
   ~Session() { }
   void interact(session_done done);
 };
+
+void
+Session::set_state(session_state next)
+{
+  log << DEBUG << state_ << " -> " << next << std::endl;
+  state_ = next;
+}
 
 void
 Session::send(const char *msg)
@@ -226,12 +249,13 @@ Session::send_data()
   const mem *m = odata_.pop();
   if (!m) {
     send(CRLF);
-    state_ = execute_command;
+    set_state(execute_command);
     return false;
+  } else {
+    set_state(write_data);
+    send_async(m->data, m->size);
+    return true;
   }
-  state_ = write_data;
-  send_async(m->data, m->size);
-  return true;
 }
 
 bool
@@ -240,14 +264,14 @@ Session::get(bool cas_unique)
   buffer key = consume_token(args_);
   if (key.empty()) {
     send("END" CRLF);
-    state_ = write_result;
+    set_state(write_result);
     return false;
   }
 
   cache::ref e = money.get(key);
   if (e == nullptr) {
     sendln("NOT_FOUND");
-    state_ = write_result;
+    set_state(write_result);
     return false;
   }
 
@@ -261,7 +285,7 @@ Session::get(bool cas_unique)
     sendf("VALUE %.*s %u %u",
           key.used(), key.headp(), e->get_flags(), size);
   }
-  state_ = write_data;
+  set_state(write_data);
   return flush();
 }
 
@@ -274,7 +298,7 @@ Session::client_error(const char *fmt, ...)
   vsendf(fmt, ap);
   va_end(ap);
   send(CRLF);
-  state_ = write_result;
+  set_state(write_result);
   throw client_error_t();
 }
 
@@ -287,7 +311,7 @@ Session::server_error(const char *fmt, ...)
   vsendf(fmt, ap);
   va_end(ap);
   send(CRLF);
-  state_ = write_result;
+  set_state(write_result);
   throw server_error_t();
 }
 
@@ -342,7 +366,7 @@ Session::send_cache_result(cache_error_t res)
     sendln("EXISTS");
     break;
   }
-  state_ = write_result;
+  set_state(write_result);
 }
 
 bool
@@ -409,7 +433,7 @@ bool
 Session::version()
 {
   sendln("VERSION " PACKAGE_VERSION);
-  state_ = write_result;
+  set_state(write_result);
   return false;
 }
 
@@ -426,7 +450,7 @@ Session::stats()
   send_stat("buckets", money.buckets());
   send_stat("keys", money.keys());
   send("END" CRLF);
-  state_ = write_result;
+  set_state(write_result);
   return false;
 }
 
@@ -460,7 +484,7 @@ bool
 Session::dispatch()
 {
   if (cmd_.empty()) {
-    state_ = write_prompt;      // ignore empty commands
+    set_state(write_prompt);    // ignore empty commands
     return false;
   } else if (cmd_.is("get")) {
     return get(false);
@@ -489,7 +513,7 @@ Session::dispatch()
   } else if (cmd_.is("stats")) {
     return stats();
   } else if (cmd_.is("quit")) {
-    state_ = stopping;
+    set_state(stopping);
     return false;
   } else {
     log << INFO << "unknown command: " << cmd_ << endl;
@@ -502,12 +526,11 @@ Session::dispatch()
 bool
 Session::recv_data(size_t bytes)
 {
-  state_ = read_data;
   idata_ = mem_alloc(bytes);       // XXX - memory chunk size
   size_t ready = min(bytes, (size_t)ibuf.used());
   memcpy(idata_->data, ibuf.headp(), ready);
   ibuf.notify_read(ready);
-  state_ = execute_write;
+  set_state(execute_write);
   if (ready == bytes) {
     return false;
   } else {
@@ -521,7 +544,7 @@ Session::recv_data(size_t bytes)
 bool
 Session::send_prompt()
 {
-  state_ = read_command;
+  set_state(read_command);
   if (prompt_) {
     send(prompt_);
     return flush();
@@ -534,7 +557,7 @@ bool
 Session::recv_command()
 {
   noreply_ = false;
-  state_ = execute_command;
+  set_state(execute_command);
   if (cmd_callback(boost::system::error_code(), 0) == 0) {
     return false;
   } else {
@@ -567,28 +590,8 @@ void
 Session::callback(boost::system::error_code ec, size_t bytes)
 {
   if (ec) {
-    switch (state_) {
-    case write_prompt:
-    case write_data:
-    case write_result:
-      log << ERROR << "write error: " << ec.message() << std::endl;
-      state_ = stopping;
-      break;
-    case read_command:
-      log << ERROR << "read error: " << ec.message() << std::endl;
-      state_ = stopping;
-      break;
-    case execute_command:
-    case execute_write:
-      break;
-    case read_data:
-      mem_free(idata_);
-      log << ERROR << "read error: " << ec.message() << std::endl;
-      state_ = stopping;
-      break;
-    case stopping:
-      break;
-    }
+    log << ERROR << "IO error: " << ec.message() << std::endl;
+    set_state(stopping);
   }
   loop();
 }
@@ -598,7 +601,6 @@ Session::loop()
 {
   bool blocked = false;
   while (not blocked) {
-    log << DEBUG << "session_state: " << state_ << std::endl;
     try {
       switch (state_) {
       case write_prompt:
@@ -615,15 +617,12 @@ Session::loop()
       case execute_write:
         blocked = dispatch_write();
         continue;
-      case read_data:
-        assert(0);                // XXX
-        continue;
       case write_data:
         obuf.reset();
         blocked = send_data();
         continue;
       case write_result:
-        state_ = write_prompt;
+        set_state(write_prompt);
         blocked = flush();
         continue;
       case stopping:

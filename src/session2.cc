@@ -421,7 +421,7 @@ Session::incr_decr(bool incr)
 
   cache_error_t res = incr ? money.incr(key_, v, &v)
     : money.decr(key_, v, &v);
-    
+
   if (res == cache_error_t::stored) {
     sendf("%llu", v);
   } else {
@@ -442,7 +442,7 @@ Session::cas()
   }
   if (parse_noreply())
     return false;
-  
+
   return recv_data(bytes);
 }
 

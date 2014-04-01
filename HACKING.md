@@ -33,11 +33,7 @@ the end of every command.
 
 Error handling feels weird and I'm not settled about it. Exceptions
 don't play well with asynchronous callbacks, so I mostly avoided using
-them. Instead, I use `std::error_code` to report error states, even
-internal cache errors. I'm not sure that this is a recommended use of
-`std::error_code` but it works okay since there are so few errors
-anyway. There is some messiness because Boost ASIO is still using the
-Boost version of `error_code`. I had to add a little adapter.
+them. 
 
 Cache (cache.cc, entry.cc)
 --------------------------

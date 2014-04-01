@@ -31,17 +31,21 @@ std::ostream &
 operator<<(std::ostream &o, session_state s)
 {
   switch (s) {
-  case write_prompt: return o << "write_prompt";
-  case read_command: return o << "read_command";
+  case write_prompt:    return o << "write_prompt";
+  case read_command:    return o << "read_command";
   case execute_command: return o << "execute_command";
-  case read_data: return o << "read_data";
-  case execute_write: return o << "execute_write";
-  case write_data: return o << "write_data";
-  case write_result: return o << "write_result";
-  case stopping: return o << "stopping";
+  case read_data:       return o << "read_data";
+  case execute_write:   return o << "execute_write";
+  case write_data:      return o << "write_data";
+  case write_result:    return o << "write_result";
+  case stopping:        return o << "stopping";
   }
   return o << "session_state(" << (int)s << ")";
 }
+
+class server_error_t {};
+class client_error_t {};
+class blocked_t {};
 
 class Session
 {
@@ -109,10 +113,10 @@ class Session
   bool touch();
 
   // Command helpers
-  bool parse_update(unsigned long *bytes);
-  bool parse_key();
+  void parse_update(unsigned long *bytes);
+  void parse_key();
   void stored_if(bool stored);
-  bool parse_noreply();
+  void parse_noreply();
 
   // Session helpers
   void callback(boost::system::error_code ec, size_t bytes);
@@ -191,18 +195,15 @@ Session::sendln(const char *msg)
   send(CRLF);
 }
 
-bool
+void
 Session::parse_noreply()
 {
   const buffer nr = consume_token(args_);
-  if (nr.empty()) {
-    return false;
-  } else if (!nr.is("noreplay")) {
-    client_error("expected noreply or end of command");
-    return true;
-  } else {
-    noreply_ = true;
-    return false;
+  if (!nr.empty()) {
+    if (nr.is("noreplay"))
+      noreply_ = true;
+    else
+      client_error("expected noreply or end of command");
   }
 }
 
@@ -327,6 +328,7 @@ Session::client_error(const char *fmt, ...)
   va_end(ap);
   send(CRLF);
   state_ = write_result;
+  throw client_error_t();
 }
 
 void
@@ -339,45 +341,37 @@ Session::server_error(const char *fmt, ...)
   va_end(ap);
   send(CRLF);
   state_ = write_result;
+  throw server_error_t();
 }
 
-bool
+void
 Session::parse_key()
 {
   key_ = consume_token(args_);
-  if (key_.empty()) {
+  if (key_.empty())
     client_error("missing key");
-    return true;
-  } else {
-    return false;
-  }
 }
 
-bool
+void
 Session::parse_update(unsigned long *bytes)
 {
-  if (parse_key())
-    return true;
+  parse_key();
   if (!consume_int(args_, &flags_)) {
     client_error("missing flags");
-    return true;
   } else if (!consume_int(args_, &exptime_)) {
     client_error("missing exptime");
-    return true;
   } else if (!consume_int(args_, bytes)) {
     client_error("missing bytes");
-    return true;
   }
-  return false;
 }
 
 bool
 Session::del()
 {
-  if (!parse_key() && !parse_noreply()) {
-    cache_error_t res = money.del(key_);
-    send_cache_result(res);
-  }
+  parse_key();
+  parse_noreply();
+  cache_error_t res = money.del(key_);
+  send_cache_result(res);
   return false;
 }
 
@@ -407,8 +401,7 @@ Session::send_cache_result(cache_error_t res)
 bool
 Session::incr_decr(bool incr)
 {
-  if (parse_key())
-    return false;
+  parse_key();
 
   uint64_t v;
   if (!consume_u64(args_, &v)) {
@@ -416,8 +409,7 @@ Session::incr_decr(bool incr)
     return false;
   }
 
-  if (parse_noreply())
-    return false;
+  parse_noreply();
 
   cache_error_t res = incr ? money.incr(key_, v, &v)
     : money.decr(key_, v, &v);
@@ -434,14 +426,10 @@ bool
 Session::cas()
 {
   unsigned long bytes;
-  if (parse_update(&bytes))
-    return false;
-  if (!consume_u64(args_, &unique_)) {
+  parse_update(&bytes);
+  if (!consume_u64(args_, &unique_))
     client_error("missing cas unique");
-    return false;
-  }
-  if (parse_noreply())
-    return false;
+  parse_noreply();
 
   return recv_data(bytes);
 }
@@ -450,14 +438,10 @@ bool
 Session::touch()
 {
   unsigned long exptime;
-  if (parse_key())
-    return false;
-  if (!consume_int(args_, &exptime)) {
+  parse_key();
+  if (!consume_int(args_, &exptime))
     client_error("missing exptime");
-    return false;
-  }
-  if (parse_noreply())
-    return false;
+  parse_noreply();
   money.touch(key_, exptime);
   sendln("TOUCHED");
   return false;
@@ -469,8 +453,7 @@ Session::flush_all()
   unsigned long delay;
   if (!consume_int(args_, &delay))
     delay = 0;
-  if (parse_noreply())
-    return false;
+  parse_noreply();
   money.flush_all(delay);
   return false;
 }
@@ -541,8 +524,8 @@ Session::dispatch()
   } else if (cmd_.is("set") || cmd_.is("add") || cmd_.is("replace") ||
              cmd_.is("append") || cmd_.is("prepend")) {
     unsigned long bytes;
-    if (parse_update(&bytes) || parse_noreply())
-      return false;
+    parse_update(&bytes);
+    parse_noreply();
     return recv_data(bytes);
   } else if (cmd_.is("incr")) {
     return incr_decr(true);
@@ -671,34 +654,42 @@ Session::loop()
   bool blocked = false;
   while (not blocked) {
     log << DEBUG << "session_state: " << state_ << std::endl;
-    switch (state_) {
-    case write_prompt:
-      obuf.reset();
-      blocked = send_prompt();
+    try {
+      switch (state_) {
+      case write_prompt:
+        obuf.reset();
+        blocked = send_prompt();
+        continue;
+      case read_command:
+        obuf.reset();
+        blocked = recv_command();
+        continue;
+      case execute_command:
+        blocked = dispatch();
+        continue;
+      case execute_write:
+        blocked = dispatch_write();
+        continue;
+      case read_data:
+        assert(0);                // XXX
+        continue;
+      case write_data:
+        obuf.reset();
+        blocked = send_data();
+        continue;
+      case write_result:
+        state_ = write_prompt;
+        blocked = flush();
+        continue;
+      case stopping:
+        io_service.dispatch(done_);
+        return;
+      }
+    } catch (client_error_t) {
       continue;
-    case read_command:
-      obuf.reset();
-      blocked = recv_command();
+    } catch (server_error_t) {
       continue;
-    case execute_command:
-      blocked = dispatch();
-      continue;
-    case execute_write:
-      blocked = dispatch_write();
-      continue;
-    case read_data:
-      assert(0);                // XXX
-      continue;
-    case write_data:
-      obuf.reset();
-      blocked = send_data();
-      continue;
-    case write_result:
-      state_ = write_prompt;
-      blocked = flush();
-      continue;
-    case stopping:
-      io_service.dispatch(done_);
+    } catch (blocked_t) {
       return;
     }
     assert(0);

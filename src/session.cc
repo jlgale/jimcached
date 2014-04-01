@@ -27,8 +27,8 @@ enum session_state {
   stopping,
 };
 
-std::ostream &
-operator<<(std::ostream &o, session_state s)
+ostream &
+operator<<(ostream &o, session_state s)
 {
   switch (s) {
   case write_prompt:    return o << "write_prompt";
@@ -45,7 +45,6 @@ operator<<(std::ostream &o, session_state s)
 
 class server_error_t {};
 class client_error_t {};
-class blocked_t {};
 
 class Session
 {
@@ -54,16 +53,16 @@ class Session
   cache &money;                        // cache handle
   stream &in;                          // session input stream
   stream &out;                         // session output stream
-  std::ostream &log;
+  ostream &log;
   const char *prompt_;
   session_done done_;        // Callback when session stops
 
   // IO callbacks
-  std::function<void (boost::system::error_code, size_t)> callback_ =
+  function<void (boost::system::error_code, size_t)> callback_ =
     [this](boost::system::error_code ec, size_t bytes) -> void {
     callback(ec, bytes);
   };
-  std::function<size_t (boost::system::error_code, size_t)> cmd_callback_ =
+  function<size_t (boost::system::error_code, size_t)> cmd_callback_ =
     [this](boost::system::error_code ec, size_t bytes) -> size_t {
     return cmd_callback(ec, bytes);
   };
@@ -127,59 +126,13 @@ class Session
   bool dispatch_write();
 
 public:
-  class closed { };
-
   Session(boost::asio::io_service &io_service,
           class cache &c, stream &in, stream &out,
-          std::ostream &log, const char *prompt)
+          ostream &log, const char *prompt)
     : io_service(io_service), money(c), in(in), out(out), log(log),
       prompt_(prompt), ibuf(2048), obuf(2048) { }
   ~Session() { }
   void interact(session_done done);
-};
-
-class stream_buffer : public std::streambuf
-{
-  buffer &buf_;
-public:
-  stream_buffer(buffer &buf) : buf_(buf) { }
-  int overflow(int c = EOF)
-  {
-    if (buf_.available() > 0) {
-      char a = c;
-      buf_.write(&a, 1);
-      return c;
-    } else {
-      return EOF;
-    }
-  }
-};
-
-
-class session_error_category : public std::error_category
-{
-  session_error_category() { }
-  const char *name() const noexcept { return "session_error"; }
-  string message (int val) const { return "some_error!?"; } // XXX
-
-public:
-  static session_error_category& instance() {
-    static session_error_category instance_;
-    return instance_;
-  }
-};
-
-class cache_error_category : public std::error_category
-{
-  cache_error_category() { }
-  const char *name() const noexcept { return "cache_error"; }
-  string message (int val) const { return "some_error"; } // XXX
-
-public:
-  static cache_error_category& instance() {
-    static cache_error_category instance_;
-    return instance_;
-  }
 };
 
 void
@@ -205,12 +158,6 @@ Session::parse_noreply()
     else
       client_error("expected noreply or end of command");
   }
-}
-
-static boost::system::error_code
-success()
-{
-  return boost::system::error_code();
 }
 
 bool
@@ -469,8 +416,6 @@ Session::version()
 bool
 Session::stats()
 {
-  stream_buffer buf(obuf);
-  std::ostream os(&buf);
   send_stat("version", PACKAGE_VERSION);
   send_stat("pointer_size", sizeof(void*));
   send_stat("cmd_get", money.get_count());
@@ -590,7 +535,7 @@ Session::recv_command()
 {
   noreply_ = false;
   state_ = execute_command;
-  if (cmd_callback(success(), 0) == 0) {
+  if (cmd_callback(boost::system::error_code(), 0) == 0) {
     return false;
   } else {
     ibuf.compact();
@@ -689,8 +634,6 @@ Session::loop()
       continue;
     } catch (server_error_t) {
       continue;
-    } catch (blocked_t) {
-      return;
     }
     assert(0);
   }

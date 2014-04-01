@@ -27,44 +27,34 @@ enum session_state {
   stopping,
 };
 
-/*
-static const char *
-sss(session_state s)
+std::ostream &
+operator<<(std::ostream &o, session_state s)
 {
   switch (s) {
-  case write_prompt: return "write_prompt";
-  case read_command: return "read_command";
-  case execute_command: return "execute_command";
-  case read_data: return "read_data";
-  case execute_write: return "execute_write";
-  case write_data: return "write_data";
-  case write_result: return "write_result";
-  case stopping: return "stopping";
+  case write_prompt: return o << "write_prompt";
+  case read_command: return o << "read_command";
+  case execute_command: return o << "execute_command";
+  case read_data: return o << "read_data";
+  case execute_write: return o << "execute_write";
+  case write_data: return o << "write_data";
+  case write_result: return o << "write_result";
+  case stopping: return o << "stopping";
   }
-  return "unknown";
+  return o << "session_state(" << (int)s << ")";
 }
-*/
 
 class Session
 {
-  boost::asio::io_service &io_service;
-  cache &money;
-  stream &in;
-  stream &out;
+  // session lifetime state
+  boost::asio::io_service &io_service; // ASIO handle
+  cache &money;                        // cache handle
+  stream &in;                          // session input stream
+  stream &out;                         // session output stream
   std::ostream &log;
   const char *prompt_;
-  bool noreply_;
-  buffer ibuf;
-  buffer obuf;
-  session_state state_ = write_prompt;
-  session_done done_;
-  buffer args_;
-  buffer cmd_;
-  unsigned long flags_, exptime_;
-  uint64_t unique_;
-  buffer key_;
-  mem *idata_ = NULL;
-  const_rope odata_;
+  session_done done_;        // Callback when session stops
+
+  // IO callbacks
   std::function<void (boost::system::error_code, size_t)> callback_ =
     [this](boost::system::error_code ec, size_t bytes) -> void {
     callback(ec, bytes);
@@ -73,6 +63,20 @@ class Session
     [this](boost::system::error_code ec, size_t bytes) -> size_t {
     return cmd_callback(ec, bytes);
   };
+
+  buffer ibuf;               // Input buffer (current command)
+  buffer obuf;               // Staged output for the current command
+
+  // Current command state
+  bool noreply_;             // When true, replys are suppressed
+  session_state state_;
+  buffer args_;
+  buffer cmd_;
+  unsigned long flags_, exptime_;
+  uint64_t unique_;
+  buffer key_;
+  mem *idata_ = NULL;
+  const_rope odata_;
 
   // Input
   bool recv_command();
@@ -125,7 +129,7 @@ public:
           class cache &c, stream &in, stream &out,
           std::ostream &log, const char *prompt)
     : io_service(io_service), money(c), in(in), out(out), log(log),
-      prompt_(prompt), noreply_(false), ibuf(2048), obuf(2048) { }
+      prompt_(prompt), ibuf(2048), obuf(2048) { }
   ~Session() { }
   void interact(session_done done);
 };
@@ -666,6 +670,7 @@ Session::loop()
 {
   bool blocked = false;
   while (not blocked) {
+    log << DEBUG << "session_state: " << state_ << std::endl;
     switch (state_) {
     case write_prompt:
       obuf.reset();

@@ -13,6 +13,11 @@
 #include <cstring>
 
 #include <boost/asio.hpp>
+#include <boost/iterator/transform_iterator.hpp>
+
+// XXX - the entire commanline must fit here
+constexpr int buffer_size = 4096;
+constexpr int max_key_size = 255;
 
 using namespace std;
 
@@ -146,7 +151,7 @@ public:
           class cache &c, stream &in, stream &out,
           ostream &log, const char *prompt)
     : io_service(io_service), money(c), in(in), out(out), log(log),
-      prompt_(prompt), ibuf(2048), obuf(2048) { }
+      prompt_(prompt), ibuf(buffer_size), obuf(buffer_size) { }
   ~Session() { }
   void interact(session_done done);
 };
@@ -271,7 +276,7 @@ Session::get(bool cas_unique)
   cache::ref e = money.get(key);
   if (e == nullptr) {
     sendln("NOT_FOUND");
-    set_state(write_result);
+    set_state(write_result);    // XXX - what about multiple results?
     return false;
   }
 
@@ -285,8 +290,16 @@ Session::get(bool cas_unique)
     sendf("VALUE %.*s %u %u",
           key.used(), key.headp(), e->get_flags(), size);
   }
-  set_state(write_data);
-  return flush();
+  int margin = max_key_size + 64; // enough to send the next VALUE line
+  if (obuf.available() > size + margin) {
+    while (const mem *m = odata_.pop())
+      send_n(m->data, m->size);
+    send(CRLF);
+    return false;
+  } else {
+    set_state(write_data);
+    return flush();
+  }
 }
 
 void
@@ -582,6 +595,11 @@ Session::cmd_callback(boost::system::error_code ec, size_t bytes)
       args_ = ibuf.sub(end - ibuf.headp() + 1);
       cmd_ = consume_token(args_);
       log << INFO << "cmd> " << cmd_ << args_ << std::endl;
+      return 0;
+    } else if (bytes == ibuf.available()) {
+      // We can't buffer the command, so hang up the phone.
+      state_ = stopping;
+      log << INFO << "command overflow" << std::endl;
       return 0;
     }
 

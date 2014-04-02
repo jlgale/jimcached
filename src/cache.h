@@ -30,7 +30,7 @@ public:
   typedef cache_key key;
   typedef entry *ref;
 private:
-  static constexpr int initial_lg2size = 16;
+  static constexpr int initial_lg2size = 20;
   // XXX - pick a real number, or parameterize
   static constexpr double usage_grow_threshold = 0.75; // cf. wikipedia
   static constexpr double reserve_percentage = 0.10;

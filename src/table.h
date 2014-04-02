@@ -13,7 +13,7 @@
 
 typedef unsigned __int128 hash_t; // XXX - member of opentable?
 
-template <class KT, class VT>
+template <class KT, class VT, class KR=const KT&>
 class opentable : public gc_object
 {
 public:
@@ -23,8 +23,8 @@ private:
   enum { shared_flag  = 1 };
 
   // XXX - normalize to std::function, or more template shit?
-  typedef bool (*eq_f)(const KT &, const KT &);
-  typedef hash_t (*hash_f)(const KT &, int seed);
+  typedef bool (*eq_f)(KR, KR);
+  typedef hash_t (*hash_f)(KR, int seed);
   typedef void (*key_release_f)(KT *);
   typedef std::function<void (VT *)> val_release_f;
 
@@ -54,8 +54,6 @@ private:
     }
   };
 
-  // Given the found entry, return true if iterate_buckets should stop
-  typedef std::function<bool (bucket_t &)> find_f;
   //enum { entry_size_lg2 = fast_log2(sizeof(bucket_t)); }
   bucket_t *table;
 
@@ -65,7 +63,8 @@ private:
   // Find bucket containing the key, or candidates that could contain
   // the key and call find_f.  Iteration stops when find_f returns true
   // or there are no more possible entries.
-  bool iterate_buckets(const KT &key, find_f action);
+  template<class F>
+  bool iterate_buckets(KR key, F action);
 
   // Allocate a bucket for the given key. If the key already exists,
   // returns the existing bucket and frees the key, if it is not
@@ -73,7 +72,7 @@ private:
   bucket_t *allocate_bucket(KT *key, KT **cur_key);
 
   // Find a bucket, if it exists, for the given key.
-  bucket_t *find_bucket(const KT &key);
+  bucket_t *find_bucket(KR key);
 
   // Set the key of the bucket, returns nullptr on failure, *b.k on success
   KT *set_key(bucket_t &b, KT *key);
@@ -102,7 +101,7 @@ public:
   ~opentable();
 
   // Find the requested key, or nullptr if it doesn't exist.
-  VT *find(const KT &key) noexcept;
+  VT *find(KR key) noexcept;
   // Set the given key to the given value. Replaces existing values,
   // Returns true on success.
   KT *set(KT *key, VT *value) noexcept;
@@ -173,17 +172,17 @@ public:
 
 };
 
-template<class KT, class VT>
-opentable<KT,VT>::opentable(int lg2size, eq_f eq, hash_f hash,
-                            key_release_f key_release,
-                            val_release_f val_release)
+template<class KT, class VT, class KR>
+opentable<KT,VT,KR>::opentable(int lg2size, eq_f eq, hash_f hash,
+                               key_release_f key_release,
+                               val_release_f val_release)
   : lg2size_(lg2size), eq(eq), hash(hash), key_release(key_release),
     val_release(val_release), value_count(0), usage_count(0) {
   table = new bucket_t[size()];
 }
 
-template<class KT, class VT>
-VT *opentable<KT, VT>::find(const KT &key) noexcept
+template<class KT, class VT, class KR>
+VT *opentable<KT, VT, KR>::find(KR key) noexcept
 {
   const bucket_t *b = find_bucket(key);
   if (b) {
@@ -198,8 +197,8 @@ VT *opentable<KT, VT>::find(const KT &key) noexcept
 // then free them.
 //
 // k must be valid, but v may be nullptr
-template<class KT, class VT>
-void opentable<KT, VT>::exclusive(KT *k, VT *v) noexcept
+template<class KT, class VT, class KR>
+void opentable<KT, VT, KR>::exclusive(KT *k, VT *v) noexcept
 {
   bucket_t *b = find_bucket(*k);
   if (b == nullptr) {
@@ -219,44 +218,44 @@ void opentable<KT, VT>::exclusive(KT *k, VT *v) noexcept
     val_release(v);
 }
 
-template<class KT, class VT>
-opentable<KT, VT>::~opentable()
+template<class KT, class VT, class KR>
+opentable<KT, VT, KR>::~opentable()
 {
   delete[] table;
 }
 
-template<class KT, class VT>
-KT *opentable<KT, VT>::set(KT *key, VT *value) noexcept
+template<class KT, class VT, class KR>
+KT *opentable<KT, VT, KR>::set(KT *key, VT *value) noexcept
 {
   return set_impl(key, value);
 }
 
-template<class KT, class VT>
-KT *opentable<KT, VT>::set_shared(KT *key, VT *value) noexcept
+template<class KT, class VT, class KR>
+KT *opentable<KT, VT, KR>::set_shared(KT *key, VT *value) noexcept
 {
   return set_impl(key, value_ref(value, shared_flag));
 }
 
-template<class KT, class VT>
-bool opentable<KT, VT>::add(KT *key, VT *value,
+template<class KT, class VT, class KR>
+bool opentable<KT, VT, KR>::add(KT *key, VT *value,
                             KT **cur_key, VT **cur_value) noexcept
 {
   return add_impl(key, value, cur_key, cur_value);
 }
 
-template<class KT, class VT>
-bool opentable<KT, VT>::add_shared(KT *key, VT *value,
+template<class KT, class VT, class KR>
+bool opentable<KT, VT, KR>::add_shared(KT *key, VT *value,
                                    KT **cur_key, VT **cur_value) noexcept
 {
   return add_impl(key, value_ref(value, shared_flag), cur_key, cur_value);
 }
 
 
-template<class KT, class VT>
-auto opentable<KT, VT>::allocate_bucket(KT *key, KT **cur_key) -> bucket_t *
+template<class KT, class VT, class KR>
+auto opentable<KT, VT, KR>::allocate_bucket(KT *key, KT **cur_key) -> bucket_t *
 {
   bucket_t *found = nullptr;
-  iterate_buckets(*key, [&](bucket_t &b) {
+  iterate_buckets(*key, [&](bucket_t& b) {
       KT *k = set_key(b, key);
       if (k == nullptr)
         return false;
@@ -268,8 +267,8 @@ auto opentable<KT, VT>::allocate_bucket(KT *key, KT **cur_key) -> bucket_t *
   return found;
 }
 
-template<class KT, class VT>
-auto opentable<KT, VT>::find_bucket(const KT &key) -> bucket_t *
+template<class KT, class VT, class KR>
+auto opentable<KT, VT, KR>::find_bucket(KR key) -> bucket_t *
 {
   bucket_t *found = nullptr;
   iterate_buckets(key, [&](bucket_t &b) {
@@ -286,8 +285,8 @@ auto opentable<KT, VT>::find_bucket(const KT &key) -> bucket_t *
   return found;
 }
 
-template<class KT, class VT>
-KT *opentable<KT, VT>::set_impl(KT *key, value_ref value) noexcept
+template<class KT, class VT, class KR>
+KT *opentable<KT, VT, KR>::set_impl(KT *key, value_ref value) noexcept
 {
   KT *cur_key;
   bucket_t *b = allocate_bucket(key, &cur_key);
@@ -299,8 +298,8 @@ KT *opentable<KT, VT>::set_impl(KT *key, value_ref value) noexcept
   }
 }
 
-template<class KT, class VT>
-bool opentable<KT, VT>::add_impl(KT *key, value_ref value,
+template<class KT, class VT, class KR>
+bool opentable<KT, VT, KR>::add_impl(KT *key, value_ref value,
                                  KT **cur_key, VT **cur_value) noexcept
 {
   bucket_t *b = allocate_bucket(key, cur_key);
@@ -315,8 +314,8 @@ bool opentable<KT, VT>::add_impl(KT *key, value_ref value,
   }
 }
 
-template <class KT, class VT>
-bool opentable<KT, VT>::replace(const KT &key, VT *value) noexcept
+template <class KT, class VT, class KR>
+bool opentable<KT, VT, KR>::replace(const KT &key, VT *value) noexcept
 {
   bucket_t *b = find_bucket(key);
   if (b == nullptr)
@@ -325,8 +324,8 @@ bool opentable<KT, VT>::replace(const KT &key, VT *value) noexcept
   return replace_value(*b, value);
 }
 
-template <class KT, class VT>
-bool opentable<KT, VT>::remove_value(bucket_t &b)
+template <class KT, class VT, class KR>
+bool opentable<KT, VT, KR>::remove_value(bucket_t &b)
 {
   value_ref old = b.v.exchange(nullptr);
   if (old == nullptr)
@@ -338,8 +337,8 @@ bool opentable<KT, VT>::remove_value(bucket_t &b)
   return true;
 }
 
-template <class KT, class VT>
-bool opentable<KT, VT>::remove(const KT &key) noexcept
+template <class KT, class VT, class KR>
+bool opentable<KT, VT, KR>::remove(const KT &key) noexcept
 {
   bucket_t *b = find_bucket(key);
   if (b == nullptr)
@@ -351,8 +350,9 @@ bool opentable<KT, VT>::remove(const KT &key) noexcept
 /* Iterate over buckets eligible for holding the given key.  Call
  * action for each empty or matching bucket until action returns true.
  */
-template<class KT, class VT>
-bool opentable<KT, VT>::iterate_buckets(const KT &key, find_f action)
+template<class KT, class VT, class KR>
+template<class F>
+bool opentable<KT, VT, KR>::iterate_buckets(KR key, F action)
 {
   // XXX - is this really what we want?
   int seed = 0;
@@ -375,8 +375,8 @@ bool opentable<KT, VT>::iterate_buckets(const KT &key, find_f action)
   return false;
 }
 
-template<class KT, class VT>
-KT *opentable<KT,VT>::set_key(bucket_t &b, KT *key)
+template<class KT, class VT, class KR>
+KT *opentable<KT,VT,KR>::set_key(bucket_t &b, KT *key)
 {
   KT *cur = b.k.load();
   while (cur == nullptr) {
@@ -392,8 +392,8 @@ KT *opentable<KT,VT>::set_key(bucket_t &b, KT *key)
   }
 }
 
-template<class KT, class VT>
-void opentable<KT,VT>::changed_value(value_ref old)
+template<class KT, class VT, class KR>
+void opentable<KT,VT,KR>::changed_value(value_ref old)
 {
   if (old == nullptr) {
     value_count.incr();
@@ -402,15 +402,15 @@ void opentable<KT,VT>::changed_value(value_ref old)
   }
 }
 
-template<class KT, class VT>
-void opentable<KT,VT>::set_value(bucket_t &b, value_ref value)
+template<class KT, class VT, class KR>
+void opentable<KT,VT,KR>::set_value(bucket_t &b, value_ref value)
 {
   value_ref previous = b.v.exchange(value);
   changed_value(previous);
 }
 
-template<class KT, class VT>
-bool opentable<KT,VT>::replace_value(bucket_t &b, value_ref value)
+template<class KT, class VT, class KR>
+bool opentable<KT,VT,KR>::replace_value(bucket_t &b, value_ref value)
 {
   value_ref previous = b.v.load();
   do {
@@ -422,8 +422,8 @@ bool opentable<KT,VT>::replace_value(bucket_t &b, value_ref value)
   return true;
 }
 
-template<class KT, class VT>
-bool opentable<KT,VT>::add_value(bucket_t &b, value_ref value, VT **cur_value)
+template<class KT, class VT, class KR>
+bool opentable<KT,VT,KR>::add_value(bucket_t &b, value_ref value, VT **cur_value)
 {
   value_ref previous = nullptr;
   if (b.v.compare_exchange_strong(previous, value)) {
@@ -438,8 +438,8 @@ bool opentable<KT,VT>::add_value(bucket_t &b, value_ref value, VT **cur_value)
   }
 }
 
-template<class KT, class VT>
-void opentable<KT, VT>::const_iterator::advance()
+template<class KT, class VT, class KR>
+void opentable<KT, VT, KR>::const_iterator::advance()
 {
   for (; ref != end; ++ref) {
     k = ref->k;
@@ -449,8 +449,8 @@ void opentable<KT, VT>::const_iterator::advance()
   k = nullptr;
 }
 
-template<class KT, class VT>
-void opentable<KT, VT>::iterator::advance()
+template<class KT, class VT, class KR>
+void opentable<KT, VT, KR>::iterator::advance()
 {
   for (; ref != end; ++ref) {
     KT *k = ref->k;
@@ -459,8 +459,8 @@ void opentable<KT, VT>::iterator::advance()
   }
 }
 
-template<class KT, class VT>
-void opentable<KT, VT>::bucket_ref::reset()
+template<class KT, class VT, class KR>
+void opentable<KT, VT, KR>::bucket_ref::reset()
 {
   b.k.store(nullptr); //XXX - , std::memory_order_relaxed);
   b.v.store(nullptr); //XXX - , std::memory_order_relaxed);

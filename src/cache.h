@@ -38,7 +38,7 @@ private:
   const size_t max_bytes;
   time_t flushed;
 
-  typedef opentable<key, entry> table_t;
+  typedef opentable<key, entry, const buffer &> table_t;
   std::atomic<table_t *> _entries;
   std::atomic<table_t *> _building;
 

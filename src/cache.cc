@@ -6,7 +6,7 @@
 #include <algorithm>
 
 static bool
-key_eq(const cache::key &a, const cache::key &b)
+key_eq(const buffer &a, const buffer &b)
 {
   if (a.used() == b.used())
     return memcmp(a.headp(), b.headp(), a.used()) == 0;
@@ -14,7 +14,7 @@ key_eq(const cache::key &a, const cache::key &b)
 }
 
 static hash_t
-key_hash(const cache::key &a, int seed)
+key_hash(const buffer &a, int seed)
 {
   return MurmurHash64A(a.headp(), a.used(), seed);
 }
@@ -38,10 +38,10 @@ cache::entry_release(entry *e)
 
 auto cache::new_table(int lg2size) -> table_t *
 {
-  return new opentable<key, entry>(lg2size, key_eq, key_hash,
-                                   key_release,
-                                   std::bind<void>(&cache::entry_release, this,
-                                                   std::placeholders::_1));
+  return new opentable<key, entry, const buffer &>(lg2size, key_eq, key_hash,
+                                                   key_release,
+                                                   std::bind<void>(&cache::entry_release, this,
+                                                                   std::placeholders::_1));
 }
 
 cache::cache(size_t max_bytes) : max_bytes(max_bytes), flushed(0),

@@ -3,7 +3,7 @@
 
 #include <cstring>
 
-void
+static void
 consume_whitespace(buffer &b)
 {
   while (!b.empty()) {

@@ -36,7 +36,7 @@ private:
   static constexpr double reserve_percentage = 0.10;
   static constexpr int sample_size = 8192;
   const size_t max_bytes;
-  time_t flushed;
+  time_t flushed;               // XXX - atomic
 
   typedef opentable<key, entry, const buffer &> table_t;
   std::atomic<table_t *> _entries;
@@ -53,6 +53,8 @@ private:
   counter bytes_;
   counter sets_;
   counter gets_;
+  counter touches_;
+  counter flushes_;
   counter get_misses_;
 
 public:
@@ -83,7 +85,9 @@ public:
   size_t get_hit_count() const;
   size_t get_miss_count() const;
   size_t set_count() const;
-  
+  size_t touch_count() const;
+  size_t flush_count() const;
+
   // Garbage collect old entries. Can be called concurrently with
   // other operations.
   void collect();

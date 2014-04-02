@@ -74,7 +74,7 @@ cache::set(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
     mykey.release();
   if (cur_key == nullptr)
     return cache_error_t::set_error;
-  
+
   bytes_.add(r.size());
   e.release();
   return cache_error_t::stored;
@@ -83,6 +83,7 @@ cache::set(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
 cache_error_t
 cache::add(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
 {
+  sets_.incr();
   std::unique_ptr<key> mykey(new key(k));
   std::unique_ptr<entry> e(new entry(flags, exptime, r));
 
@@ -116,6 +117,7 @@ cache_error_t
 cache::replace(const buffer &k, unsigned flags,
                unsigned exptime, const rope &r)
 {
+  sets_.incr();
   std::unique_ptr<entry> e(new entry(flags, exptime, r));
   table_t *entries;
   if (is_building(&entries, NULL)) {
@@ -217,6 +219,7 @@ cache::cas(const buffer &k, uint32_t flags, uint32_t exptime,
 cache_error_t
 cache::touch(const buffer &k, unsigned exptime)
 {
+  touches_.incr();
   ref e = get(k);
   if (e == nullptr)
     return cache_error_t::notfound;
@@ -324,6 +327,16 @@ size_t cache::get_count() const
   return gets_;
 }
 
+size_t cache::touch_count() const
+{
+  return touches_;
+}
+
+size_t cache::flush_count() const
+{
+  return flushes_;
+}
+
 size_t cache::get_miss_count() const
 {
   return get_misses_;
@@ -348,6 +361,7 @@ size_t cache::keys() const
 
 void cache::flush_all(int delay)
 {
+  flushes_.incr();
   flushed = timestamp::now() + delay;
 }
 

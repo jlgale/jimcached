@@ -444,6 +444,8 @@ Session::stats()
   send_stat("pointer_size", sizeof(void*));
   send_stat("cmd_get", money.get_count());
   send_stat("cmd_set", money.set_count());
+  send_stat("cmd_flush", money.flush_count());
+  send_stat("cmd_touch", money.touch_count());
   send_stat("get_hits", money.get_hit_count());
   send_stat("get_misses", money.get_miss_count());
   send_stat("bytes", money.bytes());

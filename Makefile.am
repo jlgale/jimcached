@@ -11,7 +11,7 @@ COMMON_SRC = \
 	src/log.h src/log.cc \
 	src/cpu.h src/cpu.cc \
 	src/gc.h src/gc.cc \
-	src/buffer.h \
+	src/buf_ref.h src/buffer.h \
 	src/murmur2.h src/murmur2.cc \
 	src/mem.h src/mem.cc \
 	src/atime.h \

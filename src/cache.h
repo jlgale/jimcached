@@ -21,7 +21,7 @@ enum class cache_error_t
 class cache_key : public buffer, public gc_object
 {
 public:
-  cache_key(const buffer &src) : buffer(src) { }
+  cache_key(buf src) : buffer(src) { }
 };
 
 class cache
@@ -38,7 +38,7 @@ private:
   const size_t max_bytes;
   time_t flushed;               // XXX - atomic
 
-  typedef opentable<key, entry, const buffer &> table_t;
+  typedef opentable<key, entry, buf> table_t;
   std::atomic<table_t *> _entries;
   std::atomic<table_t *> _building;
 
@@ -61,21 +61,21 @@ public:
 
   cache(size_t max_bytes);
   virtual ~cache() { delete _entries.load(); }
-  ref get(const buffer &k);
-  cache_error_t set(const buffer &k, unsigned flags,
+  ref get(buf k);
+  cache_error_t set(buf k, unsigned flags,
                     unsigned exptime, const rope &r);
-  cache_error_t add(const buffer &k, unsigned flags,
+  cache_error_t add(buf k, unsigned flags,
                     unsigned exptime, const rope &r);
-  cache_error_t replace(const buffer &k, unsigned flags,
+  cache_error_t replace(buf k, unsigned flags,
                         unsigned exptime, const rope &r);
-  cache_error_t del(const buffer &k);
-  cache_error_t append(const buffer &k, const rope &suffix);
-  cache_error_t prepend(const buffer &k, const rope &prefix);
-  cache_error_t incr(const buffer &k, uint64_t v, uint64_t *vout);
-  cache_error_t decr(const buffer &k, uint64_t v, uint64_t *vout);
-  cache_error_t cas(const buffer &k, uint32_t flags, uint32_t exptime,
+  cache_error_t del(buf k);
+  cache_error_t append(buf k, const rope &suffix);
+  cache_error_t prepend(buf k, const rope &prefix);
+  cache_error_t incr(buf k, uint64_t v, uint64_t *vout);
+  cache_error_t decr(buf k, uint64_t v, uint64_t *vout);
+  cache_error_t cas(buf k, uint32_t flags, uint32_t exptime,
                     uint64_t ver, const rope &r);
-  cache_error_t touch(const buffer &k, unsigned exptime);
+  cache_error_t touch(buf k, unsigned exptime);
   void flush_all(int delay);
 
   size_t bytes() const;

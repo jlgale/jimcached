@@ -13,12 +13,10 @@ reset()
   cash = new cache(16 * 1024);
 }
 
-static buffer
+static buf
 cbuffer(const char *s)
 {
-  buffer b(strlen(s));
-  b.write(s, strlen(s));
-  return b;
+  return buf(s, strlen(s));
 }
 
 static rope

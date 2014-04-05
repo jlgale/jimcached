@@ -108,9 +108,9 @@ public:
   // Set key to value, unless key exists.
   bool add(KT *key, VT *value, KT **cur_key, VT **cur_value) noexcept;
   // Replace existing entry with new value, returns true on success
-  bool replace(const KT &key, VT *value) noexcept;
+  bool replace(KR key, VT *value) noexcept;
   // Remove key from table, returns true if key was present
-  bool remove(const KT &key) noexcept;
+  bool remove(KR key) noexcept;
 
   int lg2size() const { return lg2size_; }
   size_t size() const { return 1ULL << lg2size_; }
@@ -315,7 +315,7 @@ bool opentable<KT, VT, KR>::add_impl(KT *key, value_ref value,
 }
 
 template <class KT, class VT, class KR>
-bool opentable<KT, VT, KR>::replace(const KT &key, VT *value) noexcept
+bool opentable<KT, VT, KR>::replace(KR key, VT *value) noexcept
 {
   bucket_t *b = find_bucket(key);
   if (b == nullptr)
@@ -338,7 +338,7 @@ bool opentable<KT, VT, KR>::remove_value(bucket_t &b)
 }
 
 template <class KT, class VT, class KR>
-bool opentable<KT, VT, KR>::remove(const KT &key) noexcept
+bool opentable<KT, VT, KR>::remove(KR key) noexcept
 {
   bucket_t *b = find_bucket(key);
   if (b == nullptr)

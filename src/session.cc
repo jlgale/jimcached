@@ -93,11 +93,11 @@ class Session
   // Current command state
   bool noreply_;             // When true, replys are suppressed
   session_state state_;
-  buffer args_;
-  buffer cmd_;
+  buf args_;
+  buf cmd_;
   unsigned long flags_, exptime_;
   uint64_t unique_;
-  buffer key_;
+  buf key_;
   mem *idata_ = NULL;
   const_rope odata_;
 
@@ -179,7 +179,7 @@ Session::sendln(const char *msg)
 void
 Session::parse_noreply()
 {
-  const buffer nr = consume_token(args_);
+  buf nr = consume_token(args_);
   if (!nr.empty()) {
     if (nr.is("noreplay"))
       noreply_ = true;
@@ -266,7 +266,7 @@ Session::send_data()
 bool
 Session::get(bool cas_unique)
 {
-  buffer key = consume_token(args_);
+  buf key = consume_token(args_);
   if (key.empty()) {
     send("END" CRLF);
     set_state(write_result);
@@ -589,10 +589,10 @@ Session::cmd_callback(boost::system::error_code ec, size_t bytes)
     if (ec)
       return 0;
 
-    const char *end = (char *)memchr(ibuf.headp(), '\n', ibuf.used() + bytes);
+    const char *end = find_end_of_command(ibuf.headp(), ibuf.used() + bytes);
     if (end) {
       ibuf.notify_write(bytes);
-      args_ = ibuf.sub(end - ibuf.headp() + 1);
+      args_ = ibuf.sub(end - ibuf.headp());
       cmd_ = consume_token(args_);
       log << INFO << "cmd> " << cmd_ << args_ << std::endl;
       return 0;

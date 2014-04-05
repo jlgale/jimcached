@@ -1,9 +1,40 @@
 /* -*-c++-*- */
 
-#include <string.h>
+#include <cstring>
 #include <iostream>
+#include <cassert>
 
-enum { BUFFER_SIZE = 32 * 1024 };
+class buf
+{
+ private:
+  const char *head_;
+  const char *tail_;
+ public:
+  buf() : buf(nullptr, nullptr) { }
+  buf(const char *head, const char *tail) : head_(head), tail_(tail) { }
+  buf(const char *b, size_t size) : head_(b), tail_(b + size) { }
+  size_t size() const { return tail_ - head_ ; }
+  size_t used() const { return size(); }
+  bool empty() const { return size() == 0; }
+  const char *headp() const { return head_; }
+  const char *tailp() const { return tail_; }
+  bool is(const char *a) const {
+    return strncmp(a, headp(), size()) == 0 && a[size()] == '\0';
+  }
+  const char * notify_read(int n) {
+    assert(n <= size());
+    const char *x = headp();
+    head_ += n;
+    return x;
+  }
+  buf sub(int n) { return buf(notify_read(n), n); }
+};
+
+inline std::ostream&
+operator<<(std::ostream& o, const buf& b)
+{
+  return o.write(b.headp(), b.size());
+}
 
 class buffer_error { };
 
@@ -13,43 +44,42 @@ class buffer
   int size;
   int head;
   int tail;
-  bool owned;
 public:
-  buffer(int size = BUFFER_SIZE) : size(size), head(0), tail(0) {
+  buffer(int size) : size(size), head(0), tail(0) {
     b = new char[size];
-    owned = true;
   }
-  buffer(char *b, int size, bool owned=false)
-    : b(b), size(size), head(0), tail(size), owned(owned)
-  {
-    if (size < 0)
-      throw buffer_error();
-  }
-  ~buffer() { if (owned) delete[] b; }
+  ~buffer() { if (b) delete[] b; }
   buffer(const buffer& a) {
-    owned = true;
     size = a.size;
     head = 0;
     tail = a.used();
     b = new char[size];
     memcpy(headp(), a.headp(), a.used());
   }
+  buffer(const buf& a) {
+    size = a.size();
+    head = 0;
+    tail = a.size();
+    b = new char[size];
+    memcpy(headp(), a.headp(), a.size());
+  }
   buffer(buffer&& a) {
     head = a.head;
     tail = a.tail;
     size = a.size;
     b = a.b;
-    owned = a.owned;
-    a.owned = false;
+    a.b = nullptr;
+    a.size = 0;
   }
   buffer& operator=(buffer&& a) {
-    if (owned) delete[] b;
+    if (b)
+      delete[] b;
     head = a.head;
     tail = a.tail;
     size = a.size;
     b = a.b;
-    owned = a.owned;
-    a.owned = false;
+    a.b = nullptr;
+    a.size = 0;
     return *this;
   }
 
@@ -63,8 +93,9 @@ public:
   char * tailp() { return b + tail; }
   const char * tailp() const { return b + tail; }
   bool is(const char *a) const {
-    return strlen(a) == used() && strncmp(a, headp(), used()) == 0;
+    return strncmp(a, headp(), used()) == 0 && a[used()] == '\0';
   }
+  operator buf () const { return buf(headp(), used()); }
 
   // update
   void reset() { head = tail = 0; }
@@ -85,31 +116,6 @@ public:
     tail = used();
     head = 0;
   }
-  void realloc(int newavail, int newhead=0) {
-    int needed = newhead + used() + newavail;
-    if (size < needed) {
-      if (!owned)
-	throw buffer_error();
-      char *a = new char[needed];
-      memcpy(a + newhead, headp(), used());
-      delete b;
-      b = a;
-      tail = newhead + used();
-      head = newhead;
-      size = needed;
-    } else if (head < newhead || available() < newavail) {
-      memmove(b + newhead, headp(), used());
-      tail = newhead + used();
-      head = newhead;
-    }
-  }
-  void unread(const buffer &prefix) {
-    if (head < prefix.used())
-      throw buffer_error();
-
-    memcpy(headp() - prefix.used(), prefix.headp(), prefix.used());
-    head -= prefix.used();
-  }
   void write(const char *a, int n) {
     if (n > available())
       throw buffer_error();
@@ -117,14 +123,7 @@ public:
     notify_write(n);
   }
   void write(const buffer &a) { write(a.headp(), a.used()); }
-  buffer sub(int n) { return buffer(notify_read(n), n); }
-  char * detach() {
-    if (!owned)
-      throw buffer_error();
-    compact();
-    owned = false;
-    return b;
-  }
+  buf sub(int n) { return buf(notify_read(n), n); }
 };
 
 inline bool

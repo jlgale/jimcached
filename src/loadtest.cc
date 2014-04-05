@@ -35,7 +35,7 @@ insert_worker(int id)
   char kstr[64], vstr[64];
   for (int i = 0; i < inserts; ++i) {
     snprintf(kstr, sizeof(kstr), "%ld", random() % nkeys);
-    buffer k(kstr, (int)strlen(kstr));
+    buf k(kstr, (int)strlen(kstr));
     snprintf(vstr, sizeof(vstr), "%d", id * 1000000 + i);
     mem *vmem = mem_alloc(strlen(vstr));
     memcpy(vmem->data, vstr, vmem->size);

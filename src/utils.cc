@@ -4,7 +4,7 @@
 #include <cstring>
 
 static void
-consume_whitespace(buffer &b)
+consume_whitespace(buf &b)
 {
   while (!b.empty()) {
     switch (*b.headp()) {
@@ -18,12 +18,12 @@ consume_whitespace(buffer &b)
   }
 }
 
-buffer
-consume_token(buffer &b)
+buf
+consume_token(buf &b)
 {
   consume_whitespace(b);
-  char *start = b.headp();
-  char *end = start + strcspn(start, " \t\n\r");
+  const char *start = b.headp();
+  const char *end = start + strcspn(start, " \t\n\r");
   return b.sub((int)(end - start));
 }
 
@@ -47,7 +47,7 @@ is_terminal(char c)
 }
 
 bool
-consume_int(buffer &b, unsigned long *i)
+consume_int(buf &b, unsigned long *i)
 {
   consume_whitespace(b);
   char *end;
@@ -60,7 +60,7 @@ consume_int(buffer &b, unsigned long *i)
 }
 
 bool
-consume_u64(buffer &b, uint64_t *i)
+consume_u64(buf &b, uint64_t *i)
 {
   consume_whitespace(b);
   char *end;
@@ -72,9 +72,9 @@ consume_u64(buffer &b, uint64_t *i)
   return true;
 }
 
-int
+const char *
 find_end_of_command(const char *buf, int len)
 {
   const char *found = (char *)memmem(buf, len, CRLF, strlen(CRLF));
-  return found ? (int)(found - buf + strlen(CRLF)) : -1;
+  return found ? found + strlen(CRLF) : nullptr;
 }

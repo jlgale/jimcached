@@ -6,17 +6,17 @@
 #include <algorithm>
 
 static bool
-key_eq(const buffer &a, const buffer &b)
+key_eq(buf a, buf b)
 {
-  if (a.used() == b.used())
-    return memcmp(a.headp(), b.headp(), a.used()) == 0;
+  if (a.size() == b.size())
+    return memcmp(a.headp(), b.headp(), a.size()) == 0;
   return false;
 }
 
 static hash_t
-key_hash(const buffer &a, int seed)
+key_hash(buf a, int seed)
 {
-  return MurmurHash64A(a.headp(), a.used(), seed);
+  return MurmurHash64A(a.headp(), a.size(), seed);
 }
 
 static void
@@ -38,10 +38,10 @@ cache::entry_release(entry *e)
 
 auto cache::new_table(int lg2size) -> table_t *
 {
-  return new opentable<key, entry, const buffer &>(lg2size, key_eq, key_hash,
-                                                   key_release,
-                                                   std::bind<void>(&cache::entry_release, this,
-                                                                   std::placeholders::_1));
+  return new opentable<key, entry, buf>(lg2size, key_eq, key_hash,
+                                            key_release,
+                                            std::bind<void>(&cache::entry_release, this,
+                                                            std::placeholders::_1));
 }
 
 cache::cache(size_t max_bytes) : max_bytes(max_bytes), flushed(0),
@@ -49,7 +49,7 @@ cache::cache(size_t max_bytes) : max_bytes(max_bytes), flushed(0),
                                  _building(nullptr) { }
 
 cache_error_t
-cache::set(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
+cache::set(buf k, unsigned flags, unsigned exptime, const rope &r)
 {
   sets_.incr();
   std::unique_ptr<key> mykey(new key(k));
@@ -81,7 +81,7 @@ cache::set(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
 }
 
 cache_error_t
-cache::add(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
+cache::add(buf k, unsigned flags, unsigned exptime, const rope &r)
 {
   sets_.incr();
   std::unique_ptr<key> mykey(new key(k));
@@ -114,7 +114,7 @@ cache::add(const buffer &k, unsigned flags, unsigned exptime, const rope &r)
 }
 
 cache_error_t
-cache::replace(const buffer &k, unsigned flags,
+cache::replace(buf k, unsigned flags,
                unsigned exptime, const rope &r)
 {
   sets_.incr();
@@ -134,7 +134,7 @@ cache::replace(const buffer &k, unsigned flags,
 }
 
 cache::ref
-cache::get(const buffer &k)
+cache::get(buf k)
 {
   gets_.incr();
   entry *e = _entries.load()->find(k);
@@ -147,7 +147,7 @@ cache::get(const buffer &k)
 }
 
 cache_error_t
-cache::del(const buffer &k)
+cache::del(buf k)
 {
   table_t *entries;
   if (is_building(&entries, NULL)) {
@@ -162,7 +162,7 @@ cache::del(const buffer &k)
 }
 
 cache_error_t
-cache::append(const buffer &key, const rope &suffix)
+cache::append(buf key, const rope &suffix)
 {
   ref e = _entries.load()->find(key);
   if (e == nullptr)
@@ -173,7 +173,7 @@ cache::append(const buffer &key, const rope &suffix)
 }
 
 cache_error_t
-cache::prepend(const buffer &key, const rope &prefix)
+cache::prepend(buf key, const rope &prefix)
 {
   ref e = get(key);
   if (e == nullptr)
@@ -184,7 +184,7 @@ cache::prepend(const buffer &key, const rope &prefix)
 }
 
 cache_error_t
-cache::incr(const buffer &k, uint64_t v, uint64_t *vout)
+cache::incr(buf k, uint64_t v, uint64_t *vout)
 {
   ref e = get(k);
   if (e == nullptr)
@@ -194,7 +194,7 @@ cache::incr(const buffer &k, uint64_t v, uint64_t *vout)
 }
 
 cache_error_t
-cache::decr(const buffer &k, uint64_t v, uint64_t *vout)
+cache::decr(buf k, uint64_t v, uint64_t *vout)
 {
   ref e = get(k);
   if (e == nullptr)
@@ -204,7 +204,7 @@ cache::decr(const buffer &k, uint64_t v, uint64_t *vout)
 }
 
 cache_error_t
-cache::cas(const buffer &k, uint32_t flags, uint32_t exptime,
+cache::cas(buf k, uint32_t flags, uint32_t exptime,
            uint64_t ver, const rope &r)
 {
   ref e = get(k);
@@ -217,7 +217,7 @@ cache::cas(const buffer &k, uint32_t flags, uint32_t exptime,
 }
 
 cache_error_t
-cache::touch(const buffer &k, unsigned exptime)
+cache::touch(buf k, unsigned exptime)
 {
   touches_.incr();
   ref e = get(k);

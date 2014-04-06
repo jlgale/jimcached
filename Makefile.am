@@ -21,7 +21,6 @@ COMMON_SRC = \
 	src/table.h src/cache.h src/cache.cc
 
 SESSION_SRC = \
-	src/error.h \
 	src/session.h src/session.cc \
 	src/utils.h src/utils.cc
 

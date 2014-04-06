@@ -1,7 +1,5 @@
 #include "buffer.h"
-#include "murmur2.h"
 #include "cache.h"
-#include "error.h"
 #include "session.h"
 #include "utils.h"
 #include "log.h"
@@ -13,7 +11,6 @@
 #include <cstring>
 
 #include <boost/asio.hpp>
-#include <boost/iterator/transform_iterator.hpp>
 
 // XXX - the entire commanline must fit here
 constexpr int buffer_size = 4096;
@@ -39,26 +36,26 @@ using namespace std;
  */
 
 enum session_state {
-  write_prompt,                 // Sending a prompt (standalone mode only)
-  read_command,                 // Reading the next command
-  execute_command,              // Execute the command or reading set data
-  execute_write,                // Execute the set/add/etc. command
-  write_data,
-  write_result,
-  stopping,
+  session_write_prompt,                 // Sending a prompt (standalone mode only)
+  session_read_command,                 // Reading the next command
+  session_execute_command,              // Execute the command or reading set data
+  session_execute_write,                // Execute the set/add/etc. command
+  session_write_data,
+  session_write_result,
+  session_stopping,
 };
 
 ostream &
 operator<<(ostream &o, session_state s)
 {
   switch (s) {
-  case write_prompt:    return o << "write_prompt";
-  case read_command:    return o << "read_command";
-  case execute_command: return o << "execute_command";
-  case execute_write:   return o << "execute_write";
-  case write_data:      return o << "write_data";
-  case write_result:    return o << "write_result";
-  case stopping:        return o << "stopping";
+  case session_write_prompt:    return o << "write_prompt";
+  case session_read_command:    return o << "read_command";
+  case session_execute_command: return o << "execute_command";
+  case session_execute_write:   return o << "execute_write";
+  case session_write_data:      return o << "write_data";
+  case session_write_result:    return o << "write_result";
+  case session_stopping:        return o << "stopping";
   }
   return o << "session_state(" << (int)s << ")";
 }
@@ -254,10 +251,10 @@ Session::send_data()
   const mem *m = odata_.pop();
   if (!m) {
     send(CRLF);
-    set_state(execute_command);
+    set_state(session_execute_command);
     return false;
   } else {
-    set_state(write_data);
+    set_state(session_write_data);
     send_async(m->data, m->size);
     return true;
   }
@@ -269,14 +266,14 @@ Session::get(bool cas_unique)
   buf key = consume_token(args_);
   if (key.empty()) {
     send("END" CRLF);
-    set_state(write_result);
+    set_state(session_write_result);
     return false;
   }
 
   cache::ref e = money.get(key);
   if (e == nullptr) {
     sendln("NOT_FOUND");
-    set_state(write_result);    // XXX - what about multiple results?
+    set_state(session_write_result);    // XXX - what about multiple results?
     return false;
   }
 
@@ -297,7 +294,7 @@ Session::get(bool cas_unique)
     send(CRLF);
     return false;
   } else {
-    set_state(write_data);
+    set_state(session_write_data);
     return flush();
   }
 }
@@ -311,7 +308,7 @@ Session::client_error(const char *fmt, ...)
   vsendf(fmt, ap);
   va_end(ap);
   send(CRLF);
-  set_state(write_result);
+  set_state(session_write_result);
   throw client_error_t();
 }
 
@@ -324,7 +321,7 @@ Session::server_error(const char *fmt, ...)
   vsendf(fmt, ap);
   va_end(ap);
   send(CRLF);
-  set_state(write_result);
+  set_state(session_write_result);
   throw server_error_t();
 }
 
@@ -379,7 +376,7 @@ Session::send_cache_result(cache_error_t res)
     sendln("EXISTS");
     break;
   }
-  set_state(write_result);
+  set_state(session_write_result);
 }
 
 bool
@@ -446,7 +443,7 @@ bool
 Session::version()
 {
   sendln("VERSION " PACKAGE_VERSION);
-  set_state(write_result);
+  set_state(session_write_result);
   return false;
 }
 
@@ -465,7 +462,7 @@ Session::stats()
   send_stat("buckets", money.buckets());
   send_stat("keys", money.keys());
   send("END" CRLF);
-  set_state(write_result);
+  set_state(session_write_result);
   return false;
 }
 
@@ -499,7 +496,7 @@ bool
 Session::dispatch()
 {
   if (cmd_.empty()) {
-    set_state(write_prompt);    // ignore empty commands
+    set_state(session_write_prompt);    // ignore empty commands
     return false;
   } else if (cmd_.is("get")) {
     return get(false);
@@ -528,7 +525,7 @@ Session::dispatch()
   } else if (cmd_.is("stats")) {
     return stats();
   } else if (cmd_.is("quit")) {
-    set_state(stopping);
+    set_state(session_stopping);
     return false;
   } else {
     log << INFO << "unknown command: " << cmd_ << endl;
@@ -545,7 +542,7 @@ Session::recv_data(size_t bytes)
   size_t ready = min(bytes, (size_t)ibuf.used());
   memcpy(idata_->data, ibuf.headp(), ready);
   ibuf.notify_read(ready);
-  set_state(execute_write);
+  set_state(session_execute_write);
   if (ready == bytes) {
     return false;
   } else {
@@ -559,7 +556,7 @@ Session::recv_data(size_t bytes)
 bool
 Session::send_prompt()
 {
-  set_state(read_command);
+  set_state(session_read_command);
   if (prompt_) {
     send(prompt_);
     return flush();
@@ -572,7 +569,7 @@ bool
 Session::recv_command()
 {
   noreply_ = false;
-  set_state(execute_command);
+  set_state(session_execute_command);
   if (cmd_callback(boost::system::error_code(), 0) == 0) {
     return false;
   } else {
@@ -598,7 +595,7 @@ Session::cmd_callback(boost::system::error_code ec, size_t bytes)
       return 0;
     } else if (bytes == ibuf.available()) {
       // We can't buffer the command, so hang up the phone.
-      state_ = stopping;
+      state_ = session_stopping;
       log << INFO << "command overflow" << std::endl;
       return 0;
     }
@@ -611,7 +608,7 @@ Session::callback(boost::system::error_code ec, size_t bytes)
 {
   if (ec) {
     log << ERROR << "IO error: " << ec.message() << std::endl;
-    set_state(stopping);
+    set_state(session_stopping);
   }
   loop();
 }
@@ -623,29 +620,29 @@ Session::loop()
   while (not blocked) {
     try {
       switch (state_) {
-      case write_prompt:
+      case session_write_prompt:
         obuf.reset();
         blocked = send_prompt();
         continue;
-      case read_command:
+      case session_read_command:
         obuf.reset();
         blocked = recv_command();
         continue;
-      case execute_command:
+      case session_execute_command:
         blocked = dispatch();
         continue;
-      case execute_write:
+      case session_execute_write:
         blocked = dispatch_write();
         continue;
-      case write_data:
+      case session_write_data:
         obuf.reset();
         blocked = send_data();
         continue;
-      case write_result:
-        set_state(write_prompt);
+      case session_write_result:
+        set_state(session_write_prompt);
         blocked = flush();
         continue;
-      case stopping:
+      case session_stopping:
         io_service.dispatch(done_);
         return;
       }
@@ -662,7 +659,7 @@ void
 Session::interact(session_done done)
 {
   done_ = done;
-  state_ = write_prompt;
+  state_ = session_write_prompt;
   loop();
 }
 

@@ -5,6 +5,20 @@
 #include <limits>
 #include <algorithm>
 
+cache_key::cache_key(char *b, buf src) : buf(b, src.size())
+{
+  memcpy(b, src.headp(), src.size());
+}
+
+// Warning - placement new is being used here with vanilla
+// deletes. ie we are assuming delete just calls free().
+cache_key *
+cache_key::alloc(buf src)
+{
+  char *b = (char *)malloc(sizeof(cache_key) + src.size());
+  return new (b) cache_key(b + sizeof(cache_key), src);
+}
+
 static bool
 key_eq(buf a, buf b)
 {
@@ -52,7 +66,7 @@ cache_error_t
 cache::set(buf k, unsigned flags, unsigned exptime, const rope &r)
 {
   sets_.incr();
-  std::unique_ptr<key> mykey(new key(k));
+  std::unique_ptr<key> mykey(key::alloc(k));
   std::unique_ptr<entry> e(new entry(flags, exptime, r));
   key *cur_key;
   table_t *entries, *building;
@@ -84,7 +98,7 @@ cache_error_t
 cache::add(buf k, unsigned flags, unsigned exptime, const rope &r)
 {
   sets_.incr();
-  std::unique_ptr<key> mykey(new key(k));
+  std::unique_ptr<key> mykey(key::alloc(k));
   std::unique_ptr<entry> e(new entry(flags, exptime, r));
 
   key *cur_key;

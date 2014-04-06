@@ -28,12 +28,12 @@ private:
     assert(nxt == nullptr || nxt > (void*)0x1000);
     next = nxt;
   }
-  
+
 public:
   gc_object() : next(nullptr), seen(0),
                 scheduled(false), dispatched(false) { }
   virtual ~gc_object() { }
-  
+
   void gc_free();
 };
 

@@ -18,10 +18,11 @@ enum class cache_error_t
   cas_exists,
 };
 
-class cache_key : public buffer, public gc_object
+class cache_key : public buf, public gc_object
 {
+  cache_key(char *b, buf src);
 public:
-  cache_key(buf src) : buffer(src) { }
+  static cache_key *alloc(buf src);
 };
 
 class cache

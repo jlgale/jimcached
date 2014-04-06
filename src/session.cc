@@ -14,6 +14,7 @@
 
 // XXX - the entire commanline must fit here
 constexpr int buffer_size = 4096;
+// must be less than buffer_size
 constexpr int max_key_size = 255;
 
 using namespace std;

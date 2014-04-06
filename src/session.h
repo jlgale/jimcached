@@ -1,6 +1,5 @@
 /* -*-c++-*- */
 #include <functional>
-#include <system_error>
 
 #include <boost/asio.hpp>
 #include "stream.h"

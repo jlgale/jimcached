@@ -20,18 +20,18 @@ public:
   void interact(session_done done)
   {
     socket_.set_option(tcp::no_delay(true));
-    session_interact(*session_, done);
+    session_->interact(done);
   }
 
   tcp_session(io_service& io_service, cache &cache, ostream &log)
     : socket_(io_service), stream_(socket_),
-      session_(session_new(io_service, cache, stream_, stream_, log, NULL),
-               session_delete) { }
+      session_(text_session_new(io_service, cache,
+                                stream_, stream_, log, NULL)) { }
 
 private:
   tcp::socket socket_;
   tcp_stream stream_;
-  std::unique_ptr<Session, decltype(&session_delete)> session_;
+  std::unique_ptr<session> session_;
 };
 
 class tcp_server

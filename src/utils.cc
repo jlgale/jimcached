@@ -75,6 +75,6 @@ consume_u64(buf &b, uint64_t *i)
 const char *
 find_end_of_command(const char *buf, int len)
 {
-  const char *found = (char *)memmem(buf, len, CRLF, strlen(CRLF));
-  return found ? found + strlen(CRLF) : nullptr;
+  const char *found = (char *)memchr(buf, '\n', len);
+  return found ? found + 1 : nullptr;
 }

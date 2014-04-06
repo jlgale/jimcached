@@ -1,6 +1,6 @@
 #include "buffer.h"
 #include "cache.h"
-#include "binary.h"
+#include "session.h"
 #include "utils.h"
 #include "log.h"
 
@@ -47,7 +47,7 @@ enum session_state {
   binary_stopping,
 };
 
-class Binary
+class binary_session : public session
 {
   // session lifetime state
   boost::asio::io_service &io_service; // ASIO handle
@@ -55,7 +55,7 @@ class Binary
   //stream &in;                          // session input stream
   //stream &out;                         // session output stream
   //ostream &log;
-  binary_done done_;            // Callback when session stops
+  session_done done_;           // Callback when session stops
 
   session_state state_;
 
@@ -63,25 +63,23 @@ class Binary
 
 public:
   /*
-  Binary(boost::asio::io_service &io_service, class cache &c,
+  binary_session(boost::asio::io_service &io_service, class cache &c,
            stream &in, stream &out, ostream &log)
     : io_service(io_service), money(c), in(in), out(out), log(log) { }
   */
-  Binary(boost::asio::io_service &io_service, class cache &,
-           stream &, stream &, ostream &)
-    : io_service(io_service) { }
-  ~Binary() { }
-  void interact(binary_done done);
+  binary_session(boost::asio::io_service &io_service, class cache &,
+                 stream &, stream &, ostream &) : io_service(io_service) { }
+  ~binary_session() { }
+  void interact(session_done done);
 };
 
 void
-Binary::loop()
+binary_session::loop()
 {
   bool blocked = false;
   while (not blocked) {
     switch (state_) {
     case binary_read_command:
-      assert(0);
       continue;
     case binary_execute_command:
       assert(0);
@@ -103,29 +101,17 @@ Binary::loop()
 }
 
 void
-Binary::interact(binary_done done)
+binary_session::interact(session_done done)
 {
   done_ = done;
   state_ = binary_read_command;
   loop();
 }
 
-Binary *
-binary_new(boost::asio::io_service &io_service,
-           class cache &c, stream &in, stream &out,
-           std::ostream &log)
+session *
+binary_session_new(boost::asio::io_service &io_service,
+                   class cache &c, stream &in, stream &out,
+                   std::ostream &log)
 {
-  return new Binary(io_service, c, in, out, log);
-}
-
-void
-binary_interact(Binary &session, binary_done done)
-{
-  session.interact(done);
-}
-
-void
-binary_delete(Binary *session)
-{
-  delete session;
+  return new binary_session(io_service, c, in, out, log);
 }

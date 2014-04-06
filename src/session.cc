@@ -64,7 +64,7 @@ operator<<(ostream &o, session_state s)
 class server_error_t {};
 class client_error_t {};
 
-class Session
+class text_session : public session
 {
   // session lifetime state
   boost::asio::io_service &io_service; // ASIO handle
@@ -136,7 +136,7 @@ class Session
   void parse_noreply();
   void set_state(session_state next);
 
-  // Session helpers
+  // text_session helpers
   void callback(boost::system::error_code ec, size_t bytes);
   size_t cmd_callback(boost::system::error_code ec, size_t bytes);
   void loop();
@@ -145,37 +145,37 @@ class Session
   bool dispatch_write();
 
 public:
-  Session(boost::asio::io_service &io_service,
+  text_session(boost::asio::io_service &io_service,
           class cache &c, stream &in, stream &out,
           ostream &log, const char *prompt)
     : io_service(io_service), money(c), in(in), out(out), log(log),
       prompt_(prompt), ibuf(buffer_size), obuf(buffer_size) { }
-  ~Session() { }
+  ~text_session() { }
   void interact(session_done done);
 };
 
 void
-Session::set_state(session_state next)
+text_session::set_state(session_state next)
 {
   log << DEBUG << state_ << " -> " << next << std::endl;
   state_ = next;
 }
 
 void
-Session::send(const char *msg)
+text_session::send(const char *msg)
 {
   send_n(msg, strlen(msg));
 }
 
 void
-Session::sendln(const char *msg)
+text_session::sendln(const char *msg)
 {
   send(msg);
   send(CRLF);
 }
 
 void
-Session::parse_noreply()
+text_session::parse_noreply()
 {
   buf nr = consume_token(args_);
   if (!nr.empty()) {
@@ -187,7 +187,7 @@ Session::parse_noreply()
 }
 
 bool
-Session::flush()
+text_session::flush()
 {
   if (obuf.empty()) {
     return false;
@@ -199,14 +199,14 @@ Session::flush()
 }
 
 void
-Session::send_n(const char *msg, size_t bytes)
+text_session::send_n(const char *msg, size_t bytes)
 {
   if (!noreply_)
     obuf.write(msg, bytes);
 }
 
 void
-Session::send_async(const char *msg, size_t bytes)
+text_session::send_async(const char *msg, size_t bytes)
 {
   assert(obuf.used() == 0);     // XXX - we could flush now
   // XXX - we could take a rope...
@@ -214,7 +214,7 @@ Session::send_async(const char *msg, size_t bytes)
 }
 
 void
-Session::vsendf(const char *fmt, va_list ap)
+text_session::vsendf(const char *fmt, va_list ap)
 {
   if (not noreply_) {
     int n = vsnprintf(obuf.tailp(), obuf.available(), fmt, ap);
@@ -224,7 +224,7 @@ Session::vsendf(const char *fmt, va_list ap)
 }
 
 void
-Session::sendf(const char *fmt, ...)
+text_session::sendf(const char *fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
@@ -233,13 +233,13 @@ Session::sendf(const char *fmt, ...)
 }
 
 void
-Session::send_stat(const char *name, const char *val)
+text_session::send_stat(const char *name, const char *val)
 {
   sendf("STAT %s %s", name, val);
 }
 
 void
-Session::send_stat(const char *name, uint64_t val)
+text_session::send_stat(const char *name, uint64_t val)
 {
   char buf[64];
   snprintf(buf, sizeof(buf), "%lu", val);
@@ -247,7 +247,7 @@ Session::send_stat(const char *name, uint64_t val)
 }
 
 bool
-Session::send_data()
+text_session::send_data()
 {
   const mem *m = odata_.pop();
   if (!m) {
@@ -262,7 +262,7 @@ Session::send_data()
 }
 
 bool
-Session::get(bool cas_unique)
+text_session::get(bool cas_unique)
 {
   buf key = consume_token(args_);
   if (key.empty()) {
@@ -301,7 +301,7 @@ Session::get(bool cas_unique)
 }
 
 void
-Session::client_error(const char *fmt, ...)
+text_session::client_error(const char *fmt, ...)
 {
   send("CLIENT ERROR ");
   va_list ap;
@@ -314,7 +314,7 @@ Session::client_error(const char *fmt, ...)
 }
 
 void
-Session::server_error(const char *fmt, ...)
+text_session::server_error(const char *fmt, ...)
 {
   send("SERVER ERROR ");
   va_list ap;
@@ -327,7 +327,7 @@ Session::server_error(const char *fmt, ...)
 }
 
 void
-Session::parse_key()
+text_session::parse_key()
 {
   key_ = consume_token(args_);
   if (key_.empty())
@@ -335,7 +335,7 @@ Session::parse_key()
 }
 
 void
-Session::parse_update(unsigned long *bytes)
+text_session::parse_update(unsigned long *bytes)
 {
   parse_key();
   if (!consume_int(args_, &flags_)) {
@@ -348,7 +348,7 @@ Session::parse_update(unsigned long *bytes)
 }
 
 bool
-Session::del()
+text_session::del()
 {
   parse_key();
   parse_noreply();
@@ -358,7 +358,7 @@ Session::del()
 }
 
 void
-Session::send_cache_result(cache_error_t res)
+text_session::send_cache_result(cache_error_t res)
 {
   switch (res) {
   case cache_error_t::stored:
@@ -381,7 +381,7 @@ Session::send_cache_result(cache_error_t res)
 }
 
 bool
-Session::incr_decr(bool incr)
+text_session::incr_decr(bool incr)
 {
   parse_key();
 
@@ -405,7 +405,7 @@ Session::incr_decr(bool incr)
 }
 
 bool
-Session::cas()
+text_session::cas()
 {
   unsigned long bytes;
   parse_update(&bytes);
@@ -417,7 +417,7 @@ Session::cas()
 }
 
 bool
-Session::touch()
+text_session::touch()
 {
   unsigned long exptime;
   parse_key();
@@ -430,7 +430,7 @@ Session::touch()
 }
 
 bool
-Session::flush_all()
+text_session::flush_all()
 {
   unsigned long delay;
   if (!consume_int(args_, &delay))
@@ -441,7 +441,7 @@ Session::flush_all()
 }
 
 bool
-Session::version()
+text_session::version()
 {
   sendln("VERSION " PACKAGE_VERSION);
   set_state(session_write_result);
@@ -449,7 +449,7 @@ Session::version()
 }
 
 bool
-Session::stats()
+text_session::stats()
 {
   send_stat("version", PACKAGE_VERSION);
   send_stat("pointer_size", sizeof(void*));
@@ -468,7 +468,7 @@ Session::stats()
 }
 
 bool                            // XXX - we never block
-Session::dispatch_write()
+text_session::dispatch_write()
 {
   rope data = rope(idata_, idata_); // XXX
   cache_error_t res;
@@ -494,7 +494,7 @@ Session::dispatch_write()
 }
 
 bool
-Session::dispatch()
+text_session::dispatch()
 {
   if (cmd_.empty()) {
     set_state(session_write_prompt);    // ignore empty commands
@@ -537,7 +537,7 @@ Session::dispatch()
 
 // XXX - we leave the trailing CRLF, interpreted as an empty command
 bool
-Session::recv_data(size_t bytes)
+text_session::recv_data(size_t bytes)
 {
   idata_ = mem_alloc(bytes);       // XXX - memory chunk size
   size_t ready = min(bytes, (size_t)ibuf.used());
@@ -555,7 +555,7 @@ Session::recv_data(size_t bytes)
 }
 
 bool
-Session::send_prompt()
+text_session::send_prompt()
 {
   set_state(session_read_command);
   if (prompt_) {
@@ -567,7 +567,7 @@ Session::send_prompt()
 }
 
 bool
-Session::recv_command()
+text_session::recv_command()
 {
   noreply_ = false;
   set_state(session_execute_command);
@@ -582,30 +582,31 @@ Session::recv_command()
 }
 
 size_t
-Session::cmd_callback(boost::system::error_code ec, size_t bytes)
+text_session::cmd_callback(boost::system::error_code ec, size_t bytes)
 {
-    if (ec)
-      return 0;
+  if (ec)
+    return 0;
 
-    const char *end = find_end_of_command(ibuf.headp(), ibuf.used() + bytes);
-    if (end) {
-      ibuf.notify_write(bytes);
-      args_ = ibuf.sub(end - ibuf.headp());
-      cmd_ = consume_token(args_);
-      log << INFO << "cmd> " << cmd_ << args_ << std::endl;
-      return 0;
-    } else if (bytes == ibuf.available()) {
-      // We can't buffer the command, so hang up the phone.
-      state_ = session_stopping;
-      log << INFO << "command overflow" << std::endl;
-      return 0;
-    }
+  const char *end = find_end_of_command(ibuf.headp(), ibuf.used() + bytes);
+  log << DEBUG << "examining:" << ec << " bytes: " << bytes << " end: " << (void*)end << std::endl;
+  if (end) {
+    ibuf.notify_write(bytes);
+    args_ = ibuf.sub(end - ibuf.headp());
+    cmd_ = consume_token(args_);
+    log << INFO << "cmd> " << cmd_ << args_ << std::endl;
+    return 0;
+  } else if (bytes == ibuf.available()) {
+    // We can't buffer the command, so hang up the phone.
+    state_ = session_stopping;
+    log << INFO << "command overflow" << std::endl;
+    return 0;
+  }
 
-    return ibuf.available() - bytes;
+  return ibuf.available() - bytes;
 }
 
 void
-Session::callback(boost::system::error_code ec, size_t bytes)
+text_session::callback(boost::system::error_code ec, size_t bytes)
 {
   if (ec) {
     log << ERROR << "IO error: " << ec.message() << std::endl;
@@ -615,7 +616,7 @@ Session::callback(boost::system::error_code ec, size_t bytes)
 }
 
 void
-Session::loop()
+text_session::loop()
 {
   bool blocked = false;
   while (not blocked) {
@@ -657,29 +658,17 @@ Session::loop()
 }
 
 void
-Session::interact(session_done done)
+text_session::interact(session_done done)
 {
   done_ = done;
   state_ = session_write_prompt;
   loop();
 }
 
-Session *
-session_new(boost::asio::io_service &io_service,
-            class cache &c, stream &in, stream &out,
-            std::ostream &log, const char *prompt)
+session *
+text_session_new(boost::asio::io_service &io_service,
+                 class cache &c, stream &in, stream &out,
+                 std::ostream &log, const char *prompt)
 {
-  return new Session(io_service, c, in, out, log, prompt);
-}
-
-void
-session_interact(Session &session, session_done done)
-{
-  session.interact(done);
-}
-
-void
-session_delete(Session *session)
-{
-  delete session;
+  return new text_session(io_service, c, in, out, log, prompt);
 }

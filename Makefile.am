@@ -27,7 +27,7 @@ SESSION_SRC = \
 jimcached_SOURCES = \
 	$(COMMON_SRC) \
 	$(SESSION_SRC) \
-	src/binary.h src/binary.cc \
+	src/binary.cc \
 	src/jimcached.cc \
 	src/pool.h src/pool.cc \
 	src/tcp.h src/tcp.cc \

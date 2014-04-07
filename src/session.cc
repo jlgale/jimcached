@@ -139,6 +139,7 @@ class text_session : public session
   // text_session helpers
   void callback(boost::system::error_code ec, size_t bytes);
   size_t cmd_callback(boost::system::error_code ec, size_t bytes);
+  bool cmd_ready(size_t additional);
   void loop();
 
   bool dispatch();
@@ -571,7 +572,7 @@ text_session::recv_command()
 {
   noreply_ = false;
   set_state(session_execute_command);
-  if (cmd_callback(boost::system::error_code(), 0) == 0) {
+  if (cmd_ready(0)) {
     return false;
   } else {
     ibuf.compact();
@@ -581,28 +582,32 @@ text_session::recv_command()
   }
 }
 
+bool
+text_session::cmd_ready(size_t additional)
+{
+  const char *end = find_end_of_command(ibuf.headp(), ibuf.used() + additional);
+  if (end) {
+    ibuf.notify_write(additional);
+    args_ = ibuf.sub(end - ibuf.headp());
+    cmd_ = consume_token(args_);
+    log << INFO << "cmd> " << cmd_ << args_ << std::endl;
+    return true;
+  } else if (additional == ibuf.available()) {
+    // We can't buffer the command, so hang up the phone.
+    state_ = session_stopping;
+    log << INFO << "command overflow" << std::endl;
+    return true;
+  }
+  return false;
+}
+
 size_t
 text_session::cmd_callback(boost::system::error_code ec, size_t bytes)
 {
   if (ec)
     return 0;
-
-  const char *end = find_end_of_command(ibuf.headp(), ibuf.used() + bytes);
-  log << DEBUG << "examining:" << ec << " bytes: " << bytes << " end: " << (void*)end << std::endl;
-  if (end) {
-    ibuf.notify_write(bytes);
-    args_ = ibuf.sub(end - ibuf.headp());
-    cmd_ = consume_token(args_);
-    log << INFO << "cmd> " << cmd_ << args_ << std::endl;
-    return 0;
-  } else if (bytes == ibuf.available()) {
-    // We can't buffer the command, so hang up the phone.
-    state_ = session_stopping;
-    log << INFO << "command overflow" << std::endl;
-    return 0;
-  }
-
-  return ibuf.available() - bytes;
+  else
+    return cmd_ready(bytes) ? 0 : ibuf.available() - bytes;
 }
 
 void
